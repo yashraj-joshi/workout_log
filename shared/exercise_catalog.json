@@ -1,0 +1,73 @@
+{
+  "version": 1,
+  "_comment": "Single source of truth for exercise vocabulary and name lookup. Copied into backend/src/workoutlog/ and web/ by `make sync-shared`; a test fails if the copies drift.",
+
+  "groups": ["Chest", "Back", "Legs", "Shoulders", "Arms", "Core", "Cardio", "Mobility"],
+
+  "muscles": [
+    "Chest", "Front shoulders", "Side shoulders", "Rear shoulders",
+    "Lats", "Mid back", "Lower back", "Traps",
+    "Biceps", "Triceps", "Forearms",
+    "Core", "Glutes", "Side glutes",
+    "Quads", "Hamstrings", "Inner thighs", "Calves",
+    "Cardio"
+  ],
+
+  "lookup": [
+    { "words": ["romanian deadlift", "rdl", "stiff leg deadlift", "stiff-leg deadlift"], "group": "Legs", "muscles": ["Hamstrings", "Glutes", "Lower back"] },
+    { "words": ["deadlift"], "group": "Legs", "muscles": ["Glutes", "Hamstrings", "Lower back"] },
+    { "words": ["hip thrust", "glute bridge", "bridge", "bridges"], "group": "Legs", "muscles": ["Glutes", "Hamstrings"] },
+    { "words": ["hip abduction", "abductor", "abduction"], "group": "Legs", "muscles": ["Side glutes", "Glutes"] },
+    { "words": ["hip adduction", "adductor", "adduction"], "group": "Legs", "muscles": ["Inner thighs"] },
+    { "words": ["leg curl", "hamstring curl", "lying curl", "seated curl"], "group": "Legs", "muscles": ["Hamstrings", "Calves"] },
+    { "words": ["leg extension"], "group": "Legs", "muscles": ["Quads"] },
+    { "words": ["leg press"], "group": "Legs", "muscles": ["Quads", "Glutes", "Inner thighs"] },
+    { "words": ["bulgarian", "split squat", "lunge", "lunges", "step up", "step-up"], "group": "Legs", "muscles": ["Quads", "Glutes", "Hamstrings"] },
+    { "words": ["squat", "squats"], "group": "Legs", "muscles": ["Quads", "Glutes", "Inner thighs"] },
+    { "words": ["calf raise", "calf raises", "calf"], "group": "Legs", "muscles": ["Calves"] },
+    { "words": ["back extension", "hyperextension", "superman"], "group": "Back", "muscles": ["Lower back", "Glutes", "Hamstrings"] },
+    { "words": ["bird dog", "bird dogs", "bird-dog"], "group": "Core", "muscles": ["Core", "Lower back", "Glutes"] },
+    { "words": ["dead bug", "plank", "crunch", "crunches", "sit up", "sit-up", "situp", "pallof", "leg raise", "russian twist", "ab wheel", "hollow hold"], "group": "Core", "muscles": ["Core"] },
+    { "words": ["svend"], "group": "Chest", "muscles": ["Chest", "Front shoulders"] },
+    { "words": ["reverse fly", "rear delt", "face pull"], "group": "Shoulders", "muscles": ["Rear shoulders", "Mid back"] },
+    { "words": ["fly", "flye", "flyes", "pec deck", "crossover"], "group": "Chest", "muscles": ["Chest", "Front shoulders"] },
+    { "words": ["incline press", "incline bench", "incline dumbbell press"], "group": "Chest", "muscles": ["Chest", "Front shoulders", "Triceps"] },
+    { "words": ["bench press", "chest press", "push up", "push-up", "pushup", "push ups", "push-ups", "pushups"], "group": "Chest", "muscles": ["Chest", "Triceps", "Front shoulders"] },
+    { "words": ["dip", "dips"], "group": "Arms", "muscles": ["Triceps", "Chest"] },
+    { "words": ["shoulder press", "overhead press", "military press", "arnold press"], "group": "Shoulders", "muscles": ["Front shoulders", "Side shoulders", "Triceps"] },
+    { "words": ["lateral raise", "lateral raises", "side raise"], "group": "Shoulders", "muscles": ["Side shoulders"] },
+    { "words": ["front raise", "front raises"], "group": "Shoulders", "muscles": ["Front shoulders"] },
+    { "words": ["upright row", "shrug", "shrugs"], "group": "Shoulders", "muscles": ["Traps", "Side shoulders"] },
+    { "words": ["pulldown", "pull down", "pull-down", "pull up", "pull-up", "pullup", "pull ups", "chin up", "chin-up"], "group": "Back", "muscles": ["Lats", "Biceps", "Mid back"] },
+    { "words": ["rowing machine", "rower", "erg"], "group": "Cardio", "muscles": ["Cardio", "Mid back", "Quads"] },
+    { "words": ["row", "rows"], "group": "Back", "muscles": ["Mid back", "Lats", "Biceps"] },
+    { "words": ["pullover"], "group": "Back", "muscles": ["Lats", "Chest"] },
+    { "words": ["hammer curl", "hammer curls"], "group": "Arms", "muscles": ["Biceps", "Forearms"] },
+    { "words": ["curl", "curls"], "group": "Arms", "muscles": ["Biceps"] },
+    { "words": ["tricep", "triceps", "pushdown", "push down", "skull crusher", "kickback", "close grip"], "group": "Arms", "muscles": ["Triceps"] },
+    { "words": ["farmer", "carry"], "group": "Core", "muscles": ["Forearms", "Traps", "Core"] },
+    { "words": ["treadmill", "walk", "walking", "jog", "jogging", "run", "running", "elliptical", "bike", "cycling", "stair", "stairs", "stepper", "cardio"], "group": "Cardio", "muscles": ["Cardio", "Calves", "Glutes"] }
+  ],
+
+  "commonNames": [
+    "Treadmill walk", "Dumbbell squat", "Goblet squat", "Leg press", "Leg curl", "Leg extension",
+    "Hip abduction", "Hip adduction", "Glute bridge", "Romanian deadlift", "Calf raise",
+    "Bird dog", "Dead bug", "Plank", "Back extension",
+    "Dumbbell bench press", "Chest press", "Svend press", "Dumbbell fly", "Push-up",
+    "Shoulder press", "Lateral raise", "Front raise", "Reverse fly", "Face pull",
+    "Lat pulldown", "Seated row", "Dumbbell row",
+    "Bicep curl", "Hammer curl", "Triceps pushdown", "Overhead triceps extension"
+  ],
+
+  "mainAreas": [
+    { "label": "Chest", "muscles": ["Chest"] },
+    { "label": "Back", "muscles": ["Lats", "Mid back"] },
+    { "label": "Shoulders", "muscles": ["Front shoulders", "Side shoulders", "Rear shoulders"] },
+    { "label": "Biceps", "muscles": ["Biceps"] },
+    { "label": "Triceps", "muscles": ["Triceps"] },
+    { "label": "Core", "muscles": ["Core"] },
+    { "label": "Glutes", "muscles": ["Glutes", "Side glutes"] },
+    { "label": "Quads", "muscles": ["Quads"] },
+    { "label": "Hamstrings", "muscles": ["Hamstrings"] }
+  ]
+}

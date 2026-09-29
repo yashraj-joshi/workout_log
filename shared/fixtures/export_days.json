@@ -1,0 +1,26 @@
+[
+  {
+    "date": "2026-09-21", "place": "gym", "summary": "Back day.",
+    "exercises": {
+      "01": { "order": 1, "exercise": "Seated row", "group": "Back", "muscles": ["Mid back", "Lats", "Biceps"], "unit": "lb",
+              "sets": [ { "reps": 10, "repsMax": 12, "weight": 40 }, { "reps": 10, "repsMax": 12, "weight": 40 }, { "reps": 10, "repsMax": 12, "weight": 40 } ],
+              "notes": "Felt good, no back pain.", "loggedAt": "2026-09-21T14:33:00Z" }
+    }
+  },
+  {
+    "date": "2026-09-25",
+    "exercises": {
+      "01": { "order": 1, "exercise": "Treadmill walk", "group": "Cardio", "muscles": ["Cardio", "Calves", "Glutes"],
+              "sets": [ { "minutes": 19.8, "distance": 1.07, "distanceUnit": "mi" } ], "loggedAt": "2026-09-25T16:12:00Z" },
+      "02": { "order": 2, "exercise": "Suitcase carry", "group": "Core", "muscles": ["Core", "Lower back", "Side glutes"], "unit": "lb",
+              "sets": [ { "reps": 5, "weight": 20, "note": "each side" } ],
+              "notes": "0.11 mi in 3:14 total, both sides.", "loggedAt": "2026-09-25T16:18:00Z" },
+      "03": { "order": 3, "exercise": "Dumbbell bench press", "group": "Chest", "muscles": ["Chest", "Triceps", "Front shoulders"],
+              "unit": "lb", "perHand": true,
+              "sets": [ { "reps": 10, "weight": 25 }, { "reps": 8, "weight": 30, "note": "heavy" } ],
+              "loggedAt": "2026-09-25T16:25:00Z" },
+      "04": { "order": 4, "exercise": "Plank", "group": "Core", "muscles": ["Core"],
+              "sets": [ { "seconds": 45 }, { "seconds": 150 } ], "loggedAt": "2026-09-25T16:31:00Z" }
+    }
+  }
+]

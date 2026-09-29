@@ -1,0 +1,106 @@
+[
+  {
+    "case": "the real day from the current app, Sep 25 2026",
+    "day": {
+      "date": "2026-09-25",
+      "exercises": {
+        "01": { "order": 1, "exercise": "Treadmill walk", "group": "Cardio", "muscles": ["Cardio", "Calves", "Glutes"],
+                "sets": [ { "minutes": 19.8, "distance": 1.07, "distanceUnit": "mi" } ], "loggedAt": "2026-09-25T16:12:00Z" },
+        "02": { "order": 2, "exercise": "Suitcase carry", "group": "Core", "muscles": ["Core", "Lower back", "Side glutes"], "unit": "lb",
+                "sets": [ { "reps": 5, "weight": 20, "note": "each side" } ],
+                "notes": "0.11 mi in 3:14 total for both sides.", "loggedAt": "2026-09-25T16:18:00Z" }
+      }
+    },
+    "expect": {
+      "place": "gym", "placeGuessed": true,
+      "totals": { "exercises": 2, "sets": 2, "strengthSets": 1, "repsLow": 5, "repsHigh": 5, "hasRange": false,
+                  "cardioMinutes": 19.8, "cardioDistance": 1.07 },
+      "setsPerMuscle": [ { "muscle": "Core", "sets": 1 }, { "muscle": "Lower back", "sets": 1 }, { "muscle": "Side glutes", "sets": 1 } ],
+      "missingAreas": ["Chest", "Back", "Shoulders", "Biceps", "Triceps", "Quads", "Hamstrings"],
+      "dayLoad": 2, "heatLevel": 1
+    }
+  },
+  {
+    "case": "the example day shown before anything is logged",
+    "day": {
+      "date": "2026-09-20",
+      "exercises": {
+        "01": { "order": 1, "exercise": "Glute bridge", "group": "Legs", "muscles": ["Glutes", "Hamstrings"],
+                "sets": [ { "reps": 12 }, { "reps": 12 }, { "reps": 12 } ] },
+        "02": { "order": 2, "exercise": "Bird dog", "group": "Core", "muscles": ["Core", "Lower back", "Glutes"],
+                "sets": [ { "seconds": 10, "note": "each side" }, { "seconds": 10, "note": "each side" }, { "seconds": 10, "note": "each side" } ] },
+        "03": { "order": 3, "exercise": "Dumbbell bench press", "group": "Chest", "muscles": ["Chest", "Triceps", "Front shoulders"],
+                "unit": "lb", "perHand": true,
+                "sets": [ { "reps": 10, "weight": 25 }, { "reps": 10, "weight": 25 }, { "reps": 8, "weight": 30 } ],
+                "notes": "Last set felt heavy." },
+        "04": { "order": 4, "exercise": "Lat pulldown", "group": "Back", "muscles": ["Lats", "Biceps", "Mid back"], "unit": "lb",
+                "sets": [ { "reps": 10, "weight": 70 }, { "reps": 10, "weight": 70 }, { "reps": 10, "weight": 70 } ] }
+      }
+    },
+    "expect": {
+      "place": "gym", "placeGuessed": true,
+      "totals": { "exercises": 4, "sets": 12, "strengthSets": 12, "repsLow": 94, "repsHigh": 94, "hasRange": false,
+                  "cardioMinutes": 0, "cardioDistance": 0 },
+      "setsPerMuscle": [
+        { "muscle": "Glutes", "sets": 6 },
+        { "muscle": "Biceps", "sets": 3 }, { "muscle": "Chest", "sets": 3 }, { "muscle": "Core", "sets": 3 },
+        { "muscle": "Front shoulders", "sets": 3 }, { "muscle": "Hamstrings", "sets": 3 }, { "muscle": "Lats", "sets": 3 },
+        { "muscle": "Lower back", "sets": 3 }, { "muscle": "Mid back", "sets": 3 }, { "muscle": "Triceps", "sets": 3 }
+      ],
+      "missingAreas": ["Quads"],
+      "dayLoad": 12, "heatLevel": 3
+    }
+  },
+  {
+    "case": "bodyweight only, so the place is guessed as home",
+    "day": {
+      "date": "2026-09-22",
+      "exercises": {
+        "01": { "order": 1, "exercise": "Push-up", "group": "Chest", "muscles": ["Chest", "Triceps", "Front shoulders"],
+                "sets": [ { "reps": 15 }, { "reps": 12 }, { "reps": 10 } ] },
+        "02": { "order": 2, "exercise": "Plank", "group": "Core", "muscles": ["Core"], "sets": [ { "seconds": 60 }, { "seconds": 45 } ] }
+      }
+    },
+    "expect": {
+      "place": "home", "placeGuessed": true,
+      "totals": { "exercises": 2, "sets": 5, "strengthSets": 5, "repsLow": 37, "repsHigh": 37, "hasRange": false,
+                  "cardioMinutes": 0, "cardioDistance": 0 },
+      "setsPerMuscle": [
+        { "muscle": "Chest", "sets": 3 }, { "muscle": "Front shoulders", "sets": 3 }, { "muscle": "Triceps", "sets": 3 },
+        { "muscle": "Core", "sets": 2 }
+      ],
+      "missingAreas": ["Back", "Biceps", "Glutes", "Quads", "Hamstrings"],
+      "dayLoad": 5, "heatLevel": 1
+    }
+  },
+  {
+    "case": "an explicit place beats the guess",
+    "day": {
+      "date": "2026-09-23", "place": "home",
+      "exercises": {
+        "01": { "order": 1, "exercise": "Dumbbell row", "group": "Back", "muscles": ["Mid back", "Lats", "Biceps"], "unit": "lb",
+                "sets": [ { "reps": 10, "repsMax": 12, "weight": 30 }, { "reps": 10, "repsMax": 12, "weight": 30 } ] }
+      }
+    },
+    "expect": {
+      "place": "home", "placeGuessed": false,
+      "totals": { "exercises": 1, "sets": 2, "strengthSets": 2, "repsLow": 20, "repsHigh": 24, "hasRange": true,
+                  "cardioMinutes": 0, "cardioDistance": 0 },
+      "setsPerMuscle": [ { "muscle": "Biceps", "sets": 2 }, { "muscle": "Lats", "sets": 2 }, { "muscle": "Mid back", "sets": 2 } ],
+      "missingAreas": ["Chest", "Shoulders", "Triceps", "Core", "Glutes", "Quads", "Hamstrings"],
+      "dayLoad": 2, "heatLevel": 1
+    }
+  },
+  {
+    "case": "a day with nothing on it",
+    "day": { "date": "2026-09-24", "exercises": {} },
+    "expect": {
+      "place": "home", "placeGuessed": true,
+      "totals": { "exercises": 0, "sets": 0, "strengthSets": 0, "repsLow": 0, "repsHigh": 0, "hasRange": false,
+                  "cardioMinutes": 0, "cardioDistance": 0 },
+      "setsPerMuscle": [],
+      "missingAreas": ["Chest", "Back", "Shoulders", "Biceps", "Triceps", "Core", "Glutes", "Quads", "Hamstrings"],
+      "dayLoad": 0, "heatLevel": 0
+    }
+  }
+]

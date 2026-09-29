@@ -1,0 +1,11 @@
+# Runtime dependencies for both Lambda functions. Pinned exactly so a rebuild
+# months from now produces the same package. Versions resolved 2026-09-25.
+fastapi==0.141.1
+mangum==0.22.0
+pydantic==2.13.5
+openai==3.19.2
+
+# boto3 ships with the Lambda Python runtime. It is pinned here so tests run
+# against a known version; sam build installs it too, which costs package size
+# but removes the "works locally, breaks in Lambda" class of surprise.
+boto3==1.43.103

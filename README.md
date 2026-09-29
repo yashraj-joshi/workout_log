@@ -1,0 +1,134 @@
+# Workout Log
+
+A one-page workout log you can talk to. Say what you just did, and it gets
+logged. Say "done for today", and it writes a short summary of the day.
+
+It replaces a Claude artifact of the same name with a real app: the same
+screens and rules, but the data lives in your own AWS account, the app installs
+to an iPhone home screen, and the assistant runs on your own OpenAI key.
+
+**Status:** phase 1 of 7 complete (backend core, local only). See
+[Build phases](#build-phases).
+
+---
+
+## What it does
+
+- **Day tab** - a calendar, the day's exercises, stat tiles, an editable day
+  summary, notes and bodyweight, and a gym/home switch.
+- **Trends tab** - workouts per week, a GitHub-style heatmap, sets per muscle
+  over a range, and the areas you have not worked.
+- **Progress tab** - per-exercise history and a top-set chart.
+- **Voice** - tap the mic, say "seated row, 3 sets of 10 to 12 at 40 pounds",
+  and it is logged. Corrections, removals, and questions about past workouts
+  work the same way.
+- **Done for today** - writes the day's summary once. After that you edit it
+  yourself.
+- **Export CSV** - one row per set.
+- **Offline** - the app opens and shows the last loaded data with no network.
+  Writes and voice need a connection.
+
+## Architecture
+
+```mermaid
+flowchart TD
+    Phone["iPhone home screen app<br/>(PWA) / laptop browser"]
+    CF["CloudFront<br/>one origin, strict CSP"]
+    S3[("S3 (private)<br/>app shell, OAC only")]
+    HTTP["API Gateway HTTP API<br/>Cognito JWT authorizer"]
+    Cognito["Cognito User Pool<br/>USER_SRP_AUTH"]
+    Api["ApiFunction<br/>FastAPI + Mangum<br/>no OpenAI access"]
+    Asst["AssistantFunction<br/>voice, text, Done for today"]
+    DDB[("DynamoDB<br/>one table, on-demand")]
+    SSM["SSM Parameter Store<br/>SecureString: OpenAI key"]
+    OpenAI(["OpenAI API<br/>gpt-transcribe, gpt-6-luna"])
+
+    Phone -->|"sign in"| Cognito
+    Phone -->|"/ and static"| CF
+    CF --> S3
+    Phone -->|"/v1/*, /health<br/>Bearer access token;<br/>/v1/auth/*: refresh cookie"| CF
+    CF --> HTTP
+    HTTP --> Api
+    HTTP --> Asst
+    Api --> DDB
+    Asst --> DDB
+    Asst --> SSM
+    Asst -->|"audio + facts"| OpenAI
+```
+
+The app and the API share one CloudFront origin, so there is no CORS anywhere.
+Only `AssistantFunction` can read the OpenAI key, and it is the only place that
+imports the OpenAI SDK.
+
+## Repo map
+
+```
+shared/
+  exercise_catalog.json     muscle vocabulary, name lookup, common names
+  fixtures/                 golden cases, run by BOTH pytest and node --test
+backend/
+  template.yaml             the whole AWS stack (phase 2)
+  requirements.txt          runtime deps, pinned
+  requirements-dev.txt      test deps
+  src/workoutlog/
+    logic.py                workout rules - twin of web/js/logic.js
+    models.py               Pydantic validation
+    repo.py                 DynamoDB: optimistic locking, the sync ETag
+    service.py              day operations, shared by routes and AI tools
+    auth.py                 JWT claims -> User
+    errors.py               the {"error": {...}} envelope
+    api_app.py              ApiFunction  (no OpenAI access)
+    assistant_app.py        AssistantFunction (the only OpenAI caller)
+    summary.py              facts for "Done for today", computed in code
+    export_csv.py           CSV, twin of web/js/csv.js
+    assistant/              OpenAI client, prompts, summarizer
+  tests/
+web/                        static app: no build step, no runtime npm deps
+scripts/                    deploy, users, keys, smoke test, secret scan
+docs/                       follow these in order
+```
+
+[docs/code-map.md](docs/code-map.md) goes file by file: what each one does,
+and where to look for a given error or change.
+
+## Where to start
+
+Follow the docs in this order:
+
+| Doc | What it gets you |
+| --- | --- |
+| [docs/01-prerequisites.md](docs/01-prerequisites.md) | Tools installed and verified |
+| [docs/02-aws-account.md](docs/02-aws-account.md) | An AWS account you can deploy from safely |
+| [docs/03-openai-key.md](docs/03-openai-key.md) | An OpenAI key stored in AWS, never in the repo |
+| [docs/04-deploy-backend.md](docs/04-deploy-backend.md) | The stack deployed |
+| [docs/05-users-and-permissions.md](docs/05-users-and-permissions.md) | Your user, and AI access |
+| [docs/06-deploy-web-and-install.md](docs/06-deploy-web-and-install.md) | The app on your home screen |
+| [docs/07-migrate-old-log.md](docs/07-migrate-old-log.md) | Your old log imported |
+| [docs/08-testing.md](docs/08-testing.md) | How to check everything works |
+| [docs/09-operations-and-costs.md](docs/09-operations-and-costs.md) | Running it, and what it costs |
+
+[docs/00-architecture.md](docs/00-architecture.md) explains why each piece was
+chosen. Read it when you want the reasoning rather than the steps.
+[docs/code-map.md](docs/code-map.md) says what each file does.
+
+## Running the tests now
+
+```bash
+make venv          # once: creates .venv and installs dependencies
+make test          # backend tests, and frontend tests once they exist
+make check-secrets # before every commit
+```
+
+Expected: `112 passed`, then `check-secrets: OK`.
+
+## Build phases
+
+| Phase | What | Status |
+| --- | --- | --- |
+| 1 | Backend core, local only | **done** |
+| 2 | AWS: SAM template, scripts, deploy | next |
+| 3 | Web foundation: shell, sign-in, PWA | |
+| 4 | Day tab | |
+| 5 | Trends, Progress, Export CSV | |
+| 6 | AI: assistant, voice UI, Done for today | |
+| 7 | Migration, docs, parity checklist | |

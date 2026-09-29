@@ -1,0 +1,5 @@
+# Test-only. Never packaged into the Lambda.
+-r requirements.txt
+pytest==9.1.1
+moto[dynamodb]==5.2.3
+httpx==0.28.1

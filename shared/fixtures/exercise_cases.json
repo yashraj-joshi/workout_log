@@ -1,0 +1,77 @@
+[
+  {
+    "case": "weights with a rep range",
+    "exercise": { "exercise": "Seated row", "group": "Back", "muscles": ["Mid back", "Lats", "Biceps"], "unit": "lb",
+      "sets": [ { "reps": 10, "repsMax": 12, "weight": 40 }, { "reps": 10, "repsMax": 12, "weight": 40 }, { "reps": 10, "repsMax": 12, "weight": 40 } ] },
+    "expect": { "compactLine": "3 × 10–12 @ 40 lb", "isCardio": false,
+      "topSet": { "kind": "weight", "value": 40, "label": "40 lb × 10–12" },
+      "muscles": ["Mid back", "Lats", "Biceps"], "group": "Back" }
+  },
+  {
+    "case": "weights that change mid-exercise",
+    "exercise": { "exercise": "Dumbbell bench press", "group": "Chest", "muscles": ["Chest", "Triceps", "Front shoulders"], "unit": "lb", "perHand": true,
+      "sets": [ { "reps": 10, "weight": 25 }, { "reps": 10, "weight": 25 }, { "reps": 8, "weight": 30 } ] },
+    "expect": { "compactLine": "2 × 10 @ 25 lb · 8 @ 30 lb", "isCardio": false,
+      "topSet": { "kind": "weight", "value": 30, "label": "30 lb × 8" },
+      "muscles": ["Chest", "Triceps", "Front shoulders"], "group": "Chest" }
+  },
+  {
+    "case": "cardio with distance",
+    "exercise": { "exercise": "Treadmill walk", "group": "Cardio", "muscles": ["Cardio", "Calves", "Glutes"],
+      "sets": [ { "minutes": 25, "distance": 1.3, "distanceUnit": "mi" } ] },
+    "expect": { "compactLine": "25 min, 1.3 mi", "isCardio": true,
+      "topSet": { "kind": "minutes", "value": 25, "label": "25 min" },
+      "muscles": ["Cardio", "Calves", "Glutes"], "group": "Cardio" }
+  },
+  {
+    "case": "two identical cardio blocks",
+    "exercise": { "exercise": "Elliptical", "sets": [ { "minutes": 10 }, { "minutes": 10 } ] },
+    "expect": { "compactLine": "2 × 10 min", "isCardio": true,
+      "topSet": { "kind": "minutes", "value": 10, "label": "10 min" },
+      "muscles": ["Cardio", "Calves", "Glutes"], "group": "Cardio" }
+  },
+  {
+    "case": "holds with a per-set note",
+    "exercise": { "exercise": "Bird dog", "group": "Core", "muscles": ["Core", "Lower back", "Glutes"],
+      "sets": [ { "seconds": 10, "note": "each side" }, { "seconds": 10, "note": "each side" }, { "seconds": 10, "note": "each side" } ] },
+    "expect": { "compactLine": "3 × 10 s", "isCardio": false,
+      "topSet": { "kind": "seconds", "value": 10, "label": "10 s" },
+      "muscles": ["Core", "Lower back", "Glutes"], "group": "Core" }
+  },
+  {
+    "case": "a long hold reads as minutes",
+    "exercise": { "exercise": "Plank", "sets": [ { "seconds": 150 } ] },
+    "expect": { "compactLine": "2:30 min", "isCardio": false,
+      "topSet": { "kind": "seconds", "value": 150, "label": "2:30 min" },
+      "muscles": ["Core"], "group": "Core" }
+  },
+  {
+    "case": "bodyweight reps only",
+    "exercise": { "exercise": "Glute bridge", "sets": [ { "reps": 12 }, { "reps": 12 }, { "reps": 12 } ] },
+    "expect": { "compactLine": "3 × 12", "isCardio": false,
+      "topSet": { "kind": "reps", "value": 12, "label": "12 reps" },
+      "muscles": ["Glutes", "Hamstrings"], "group": "Legs" }
+  },
+  {
+    "case": "heaviest set wins, ties go to more reps",
+    "exercise": { "exercise": "Goblet squat", "unit": "lb",
+      "sets": [ { "reps": 8, "weight": 50 }, { "reps": 12, "weight": 50 }, { "reps": 15, "weight": 35 } ] },
+    "expect": { "compactLine": "8 @ 50 lb · 12 @ 50 lb · 15 @ 35 lb", "isCardio": false,
+      "topSet": { "kind": "weight", "value": 50, "label": "50 lb × 12" },
+      "muscles": ["Quads", "Glutes", "Inner thighs"], "group": "Legs" }
+  },
+  {
+    "case": "weight with no reps logged",
+    "exercise": { "exercise": "Farmer carry", "unit": "lb", "sets": [ { "weight": 20, "note": "each side" } ] },
+    "expect": { "compactLine": "20 lb", "isCardio": false,
+      "topSet": { "kind": "weight", "value": 20, "label": "20 lb" },
+      "muscles": ["Forearms", "Traps", "Core"], "group": "Core" }
+  },
+  {
+    "case": "kilograms",
+    "exercise": { "exercise": "Leg press", "unit": "kg", "sets": [ { "reps": 10, "weight": 60 }, { "reps": 10, "weight": 60 } ] },
+    "expect": { "compactLine": "2 × 10 @ 60 kg", "isCardio": false,
+      "topSet": { "kind": "weight", "value": 60, "label": "60 kg × 10" },
+      "muscles": ["Quads", "Glutes", "Inner thighs"], "group": "Legs" }
+  }
+]

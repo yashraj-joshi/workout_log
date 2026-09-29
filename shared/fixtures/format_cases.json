@@ -1,0 +1,41 @@
+{
+  "fmtNum": [
+    { "in": 40,       "out": "40" },
+    { "in": 19.8,     "out": "19.8" },
+    { "in": 1.07,     "out": "1.1" },
+    { "in": 1000,     "out": "1,000" },
+    { "in": 1234.56,  "out": "1,234.6" },
+    { "in": 0,        "out": "0" },
+    { "in": 2.5,      "out": "2.5" }
+  ],
+  "fmtHold": [
+    { "in": 10,   "out": "10 s" },
+    { "in": 45,   "out": "45 s" },
+    { "in": 119,  "out": "119 s" },
+    { "in": 120,  "out": "2:00 min" },
+    { "in": 150,  "out": "2:30 min" },
+    { "in": 605,  "out": "10:05 min" }
+  ],
+  "fmtReps": [
+    { "reps": 12, "repsMax": null, "out": "12" },
+    { "reps": 10, "repsMax": 12,   "out": "10–12" },
+    { "reps": 10, "repsMax": 10,   "out": "10" }
+  ],
+  "dates": [
+    { "date": "2026-09-21", "today": "2026-09-25", "long": "Monday, September 21",    "short": "Sep 21" },
+    { "date": "2026-09-25", "today": "2026-09-25", "long": "Friday, September 25",    "short": "Sep 25" },
+    { "date": "2025-12-31", "today": "2026-09-25", "long": "Wednesday, December 31, 2025", "short": "Dec 31, 2025" },
+    { "date": "2026-02-01", "today": "2026-09-25", "long": "Sunday, February 1",      "short": "Feb 1" }
+  ],
+  "changes": [
+    { "current": { "kind": "weight",  "value": 45, "unit": "lb", "reps": 10 }, "previous": { "kind": "weight", "value": 40, "unit": "lb", "reps": 12 }, "out": "+5 lb" },
+    { "current": { "kind": "weight",  "value": 40, "unit": "lb", "reps": 12 }, "previous": { "kind": "weight", "value": 45, "unit": "lb", "reps": 10 }, "out": "−5 lb" },
+    { "current": { "kind": "weight",  "value": 40, "unit": "lb", "reps": 10 }, "previous": { "kind": "weight", "value": 40, "unit": "lb", "reps": 12 }, "out": "−2 reps" },
+    { "current": { "kind": "weight",  "value": 40, "unit": "lb", "reps": 10 }, "previous": { "kind": "weight", "value": 40, "unit": "lb", "reps": 10 }, "out": "same" },
+    { "current": { "kind": "seconds", "value": 40 }, "previous": { "kind": "seconds", "value": 30 }, "out": "+10 sec" },
+    { "current": { "kind": "minutes", "value": 19.8 }, "previous": { "kind": "minutes", "value": 25 }, "out": "−5.2 min" },
+    { "current": { "kind": "reps",    "value": 12 }, "previous": { "kind": "reps", "value": 10 }, "out": "+2 reps" },
+    { "current": { "kind": "weight",  "value": 40, "unit": "lb", "reps": 10 }, "previous": null, "out": "first" },
+    { "current": { "kind": "weight",  "value": 40, "unit": "lb", "reps": 10 }, "previous": { "kind": "reps", "value": 10 }, "out": "first" }
+  ]
+}
