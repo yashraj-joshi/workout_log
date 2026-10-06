@@ -72,10 +72,12 @@ about 15 minutes. "Prevent user existence errors" makes an unknown email and a
 wrong password fail the same way, so the form can't be used to find out who
 has an account.
 
-**Why not the Cognito hosted UI?** It works by redirecting out of the app and
-back. In a home-screen web app on iOS, that round trip is unreliable: it can
-open Safari instead of the app, and the return can land in a new context that
-has lost your state. A built-in form never leaves the app.
+**Why not Cognito's hosted sign-in page (Managed Login)?** It redirects out of
+the app and back. Since iOS 12.2 a plain redirect from a home-screen app usually
+returns to the app. But popups and some identity-provider flows still hand off
+to Safari, and every redirect reloads the page and drops in-memory state. It
+also posts the password to Cognito's form, where SRP never sends it at sign-in.
+A built-in form never leaves the app and keeps SRP.
 
 ### Tokens: where each one lives
 
@@ -83,10 +85,10 @@ has lost your state. A built-in form never leaves the app.
 | --- | --- | --- | --- |
 | Access (JWT) | 15 min | memory | `Authorization: Bearer` on API calls |
 | ID (JWT) | 15 min | memory | showing the user's email in the app |
-| Refresh (opaque) | 30 days | httpOnly cookie | getting new access and ID tokens |
+| Refresh (opaque) | 90 days | httpOnly cookie | getting new access and ID tokens |
 
 The refresh token is the one worth stealing, because it keeps minting access
-tokens for 30 days. So the app's JavaScript never keeps it. It lives in a
+tokens for 90 days. So the app's JavaScript never keeps it. It lives in a
 cookie that is:
 
 - `HttpOnly` - no script, including an injected one, can read it.
@@ -117,9 +119,9 @@ covers a retry after a lost response. Two things follow:
 
 Rotation uses Cognito's `GetTokensFromRefreshToken` API. The older
 `REFRESH_TOKEN_AUTH` flow can't be used alongside rotation, so it is switched
-off in the app client. Rotation does not extend the 30 days: each new refresh
+off in the app client. Rotation does not extend the 90 days: each new refresh
 token expires when the first one would have, so everyone signs in again at
-least every 30 days.
+least every 90 days.
 
 None of these Cognito calls need IAM permissions. `GetTokensFromRefreshToken`
 and `RevokeToken` are authorized by the refresh token itself, so
@@ -134,7 +136,7 @@ site can't read the tokens a route returns.
 **What is still exposed, and why access tokens are short.** A script injected
 into the page (XSS) can't read the cookie, but while the page is open it can
 call `/v1/auth/refresh` itself and use the access token it gets back. It loses
-that access when the page closes, and it never gets the 30-day credential.
+that access when the page closes, and it never gets the 90-day credential.
 
 API Gateway checks a JWT's signature and expiry, but not whether Cognito has
 revoked it. A stolen access token therefore keeps working until it expires,
@@ -417,7 +419,7 @@ Nothing else does. `store=false` means OpenAI does not retain it as state.
 | App | PWA | Native iOS | No store, no $99/yr, instant updates |
 | Frontend | Plain ES modules | React/Vue | No build step; port was direct |
 | Sign-in | Built-in SRP form | Cognito hosted UI | Redirects are unreliable from a home-screen app |
-| Refresh token | httpOnly cookie + rotation | `localStorage` | Injected script can't steal a 30-day credential; costs three small routes |
+| Refresh token | httpOnly cookie + rotation | `localStorage` | Injected script can't steal a 90-day credential; costs three small routes |
 | API | HTTP API | REST API | JWT authorizer built in, ~70% cheaper |
 | Database | DynamoDB | RDS | Every access is a key lookup; $0 idle |
 | Compute | Lambda | Fargate | $0 idle vs ~$12/month idle |
@@ -510,7 +512,7 @@ rather than UTC's.
   `shared/fixtures/` runs in pytest and `node --test`, so the Python and
   JavaScript copies cannot drift silently.
 - **A refresh token JavaScript can't read.** SRP keeps the password off the
-  wire. An httpOnly, `SameSite=Strict` cookie keeps the 30-day token away from
+  wire. An httpOnly, `SameSite=Strict` cookie keeps the 90-day token away from
   injected scripts. Rotation makes a copied token useless. Access tokens are
   short because API Gateway doesn't check revocation. The known limit: XSS
   can still act as the user while the page is open.
