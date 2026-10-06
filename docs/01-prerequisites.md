@@ -127,7 +127,7 @@ make venv
 ```
 
 What this does: creates `.venv/`, then installs `fastapi`, `mangum`,
-`pydantic`, `openai`, `boto3` and the test tools from
+`pydantic`, `openai`, `boto3`, the test tools and `cfn-lint` from
 `backend/requirements-dev.txt`. `.venv/` is gitignored - it never gets
 committed.
 
@@ -146,7 +146,7 @@ make test
 Expected:
 
 ```
-186 passed
+198 passed
   no frontend tests yet (phase 4)
 ```
 
@@ -249,7 +249,7 @@ make check-secrets
 Expected last two lines:
 
 ```
-186 passed
+198 passed
 check-secrets: OK
 ```
 

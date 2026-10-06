@@ -4,7 +4,7 @@ What each file does, and where to look when you want to change or debug
 something. For why the pieces were chosen, read
 [00-architecture.md](00-architecture.md).
 
-This covers what exists after phase 1. Files that later phases add are listed
+This covers what exists after phase 2. Files that later phases add are listed
 in [section 9](#9-not-built-yet).
 
 ---
@@ -300,6 +300,7 @@ All under `backend/tests/`. Run them with `make test-py`.
 | `test_isolation.py` | A second user can't see or change the first user's data |
 | `test_repo.py` | Locking and retries, the ETag counter, atomic moves, numbers round-tripping, the usage counter |
 | `test_shared_fixtures.py` | Runs the golden cases in `shared/fixtures/` against `logic.py` and `export_csv.py` |
+| `test_template.py` | `template.yaml` matches the code: every route deployed on the right function, only three routes skip the authorizer, `ApiFunction` can't read the key, token settings, retained table and pool, private bucket, strict CSP |
 
 `pytest.ini` puts `src` on the import path and turns deprecation warnings from
 our own code into failures.
@@ -321,12 +322,18 @@ our own code into failures.
 
 | Path | What it is |
 | --- | --- |
-| `Makefile` | `venv`, `sync-shared`, `test`, `check-secrets`, `serve`, `clean`. Run `make help` |
+| `Makefile` | `venv`, `sync-shared`, `test`, `check-secrets`, `lint-template`, `build`, `deploy`, `smoke`, `serve`, `clean`. Run `make help` |
+| `backend/template.yaml` | The whole AWS stack: table, Cognito, HTTP API, both functions, bucket, CloudFront. `test_template.py` guards it |
+| `backend/src/requirements.txt` | Runtime dependencies, pinned exactly. Inside `src/` because SAM packages that folder |
+| `backend/requirements-dev.txt` | Adds pytest, moto, httpx, PyYAML and cfn-lint. Never packaged |
+| `scripts/lib.sh` | Shared by the scripts: stack name, region, reading stack outputs |
+| `scripts/deploy-backend.sh` | `make deploy`: committed code only, tests, build, deploy, and the second pass that sets `AppOrigin` |
+| `scripts/smoke-test.sh` | `make smoke`: checks the live stack from outside without an account |
+| `scripts/put-openai-key.sh` | Stores the OpenAI key in SSM without it touching history or argv |
+| `scripts/create-user.sh`, `set-ai-access.sh` | Invite a user; turn AI on or off for them |
 | `scripts/check-secrets.sh` | Fails if a key-shaped string is in a tracked file, or if `web/` mentions OpenAI |
-| `backend/requirements.txt` | Runtime dependencies, pinned exactly |
-| `backend/requirements-dev.txt` | Adds pytest, moto and httpx. Never packaged |
 | `docs/00-architecture.md` | Why each piece was chosen |
-| `docs/01-prerequisites.md` | Installing the tools |
+| `docs/01` to `05` | Tools, AWS account, OpenAI key, deploy, users |
 | `web/` | Only the catalog copy so far |
 
 ---
@@ -359,8 +366,10 @@ our own code into failures.
 
 ## 8. Settings
 
-Every setting is an environment variable with a default. From phase 2,
-`backend/template.yaml` sets them.
+Every setting is an environment variable with a default. `backend/template.yaml`
+sets them on the deployed functions; template parameters (`GitCommit`,
+`AppOrigin`, `DailyAiLimit`, `OpenAIKeyParam`, `AssistantModel`) feed some of
+them, and `deploy-backend.sh` passes the first two.
 
 | Variable | Default | Read in | Controls |
 | --- | --- | --- | --- |
@@ -382,14 +391,12 @@ Other files already mention these paths, so here is when each arrives.
 
 | Path | Phase |
 | --- | --- |
-| `backend/template.yaml` | 2 |
-| Deploy, user, key and smoke-test scripts in `scripts/` | 2 |
 | `web/index.html`, CSS, sign-in, PWA files | 3 |
 | `web/js/logic.js`, `web/tests/*.test.js` | 4 |
 | `web/js/csv.js` | 5 |
 | `/v1/assistant`, `/v1/assistant/undo` | 6 |
 | Import of the old log | 7 |
-| `docs/02` to `docs/09` | As each phase lands |
+| `docs/06` to `docs/09` | As each phase lands |
 
 ---
 

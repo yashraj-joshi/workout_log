@@ -422,9 +422,22 @@ Phase 2a closed the gaps between the code and the architecture doc:
   `get_summarizer` no longer imports the SDK; `finish_day` gives the usage
   count back when the summary fails; `ai_errors` maps SSM failures to 502.
 
-Not built yet: the `in_progress` claim flow for `/v1/assistant` (phase 6), and
-the AWS side (`template.yaml`, phase 2b), which sets `COGNITO_CLIENT_ID`,
-`APP_ORIGIN` and `REFRESH_TOKEN_DAYS`.
+Phase 2b added `backend/template.yaml`, which decides what reaches section 1
+at all:
+
+- CloudFront sends `/v1/*` and `/health` to the HTTP API, uncached, with every
+  viewer header except `Host`, so `Authorization`, `Cookie`, `Origin` and
+  `Idempotency-Key` all arrive.
+- The JWT authorizer runs on every route except `/health`,
+  `/v1/auth/refresh` and `/v1/auth/signout`. Those three reach Lambda with no
+  claims in the event, and `current_user` is never called on them.
+- `POST /v1/days/{date}/finish` goes to AssistantFunction; everything else to
+  ApiFunction. `GET /health` on AssistantFunction has no route, so it is
+  reachable only in tests.
+- The template sets `COGNITO_CLIENT_ID`, `APP_ORIGIN` and
+  `REFRESH_TOKEN_DAYS` on ApiFunction.
+
+Not built yet: the `in_progress` claim flow for `/v1/assistant` (phase 6).
 
 ---
 

@@ -7,7 +7,7 @@ It replaces a Claude artifact of the same name with a real app: the same
 screens and rules, but the data lives in your own AWS account, the app installs
 to an iPhone home screen, and the assistant runs on your own OpenAI key.
 
-**Status:** phase 1 of 7 complete (backend core, local only). See
+**Status:** phase 2 of 7 complete (backend deployable to AWS). See
 [Build phases](#build-phases).
 
 ---
@@ -67,15 +67,16 @@ shared/
   exercise_catalog.json     muscle vocabulary, name lookup, common names
   fixtures/                 golden cases, run by BOTH pytest and node --test
 backend/
-  template.yaml             the whole AWS stack (phase 2)
-  requirements.txt          runtime deps, pinned
-  requirements-dev.txt      test deps
+  template.yaml             the whole AWS stack
+  requirements-dev.txt      test and lint deps
+  src/requirements.txt      runtime deps, pinned (packaged with the Lambdas)
   src/workoutlog/
     logic.py                workout rules - twin of web/js/logic.js
     models.py               Pydantic validation
     repo.py                 DynamoDB: optimistic locking, the sync ETag
     service.py              day operations, shared by routes and AI tools
     auth.py                 JWT claims -> User
+    sessions.py             the refresh-token cookie: /v1/auth/*
     errors.py               the {"error": {...}} envelope
     api_app.py              ApiFunction  (no OpenAI access)
     assistant_app.py        AssistantFunction (the only OpenAI caller)
@@ -119,15 +120,18 @@ make test          # backend tests, and frontend tests once they exist
 make check-secrets # before every commit
 ```
 
-Expected: `186 passed`, then `check-secrets: OK`.
+Expected: `198 passed`, then `check-secrets: OK`.
+
+To deploy, follow docs 02 to 05; the short version is `make deploy`, then
+`make smoke`.
 
 ## Build phases
 
 | Phase | What | Status |
 | --- | --- | --- |
 | 1 | Backend core, local only | **done** |
-| 2 | AWS: SAM template, scripts, deploy | next |
-| 3 | Web foundation: shell, sign-in, PWA | |
+| 2 | AWS: SAM template, scripts, deploy | **done** |
+| 3 | Web foundation: shell, sign-in, PWA | next |
 | 4 | Day tab | |
 | 5 | Trends, Progress, Export CSV | |
 | 6 | AI: assistant, voice UI, Done for today | |

@@ -1,0 +1,387 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Workout Log. One CloudFront origin in front of a private S3 bucket (the app)
+  and an HTTP API (two Lambda functions), with Cognito sign-in and one
+  DynamoDB table. docs/00-architecture.md explains each choice.
+
+Parameters:
+  GitCommit:
+    Type: String
+    Default: unknown
+    Description: Shown by /health. deploy-backend.sh passes the short commit hash.
+  AppOrigin:
+    Type: String
+    Default: ""
+    AllowedPattern: "^$|^https://[a-z0-9.-]+$"
+    Description: >
+      The app's origin, e.g. https://d123.cloudfront.net. Empty on the first
+      deploy, because the distribution doesn't exist yet; the /v1/auth/* routes
+      refuse every request until it is set. deploy-backend.sh fills it in.
+  DailyAiLimit:
+    Type: Number
+    Default: 100
+    MinValue: 1
+    Description: AI calls per user per UTC day.
+  OpenAIKeyParam:
+    Type: String
+    Default: /workout-log/openai-api-key
+    AllowedPattern: "^/[A-Za-z0-9/_.-]+$"
+    Description: SSM SecureString holding the OpenAI key. put-openai-key.sh creates it.
+  AssistantModel:
+    Type: String
+    Default: gpt-6-luna
+
+Globals:
+  Function:
+    Runtime: python3.13
+    Architectures: [arm64]
+    CodeUri: src/
+    Environment:
+      Variables:
+        TABLE_NAME: !Ref Table
+        GIT_COMMIT: !Ref GitCommit
+        LOG_LEVEL: INFO
+
+Resources:
+  # ------------------------------------------------------------------ data
+  Table:
+    Type: AWS::DynamoDB::Table
+    # Training history outlives any one stack: `sam delete` leaves it behind.
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - { AttributeName: PK, AttributeType: S }
+        - { AttributeName: SK, AttributeType: S }
+      KeySchema:
+        - { AttributeName: PK, KeyType: HASH }
+        - { AttributeName: SK, KeyType: RANGE }
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      DeletionProtectionEnabled: true
+
+  # --------------------------------------------------------------- sign-in
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    # Accounts outlive the stack too. Deletion protection blocks a stray delete.
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      UserPoolName: !Sub ${AWS::StackName}-users
+      # Refresh-token rotation needs the Essentials feature plan.
+      UserPoolTier: ESSENTIALS
+      DeletionProtection: ACTIVE
+      UsernameAttributes: [email]
+      UsernameConfiguration:
+        CaseSensitive: false
+      AutoVerifiedAttributes: [email]
+      UserAttributeUpdateSettings:
+        # A changed email stays unverified, and unused, until the user proves it.
+        AttributesRequireVerificationBeforeUpdate: [email]
+      AdminCreateUserConfig:
+        # Invite-only. Turn on self sign-up only with bot protection in front.
+        AllowAdminCreateUserOnly: true
+      AccountRecoverySetting:
+        RecoveryMechanisms:
+          - { Name: verified_email, Priority: 1 }
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 12
+          RequireLowercase: true
+          RequireUppercase: true
+          RequireNumbers: true
+          RequireSymbols: false
+          TemporaryPasswordValidityDays: 7
+      MfaConfiguration: "OFF"
+
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      UserPoolId: !Ref UserPool
+      ClientName: !Sub ${AWS::StackName}-web
+      GenerateSecret: false
+      # SRP only. REFRESH_TOKEN_AUTH can't be used alongside rotation; the
+      # cookie routes call GetTokensFromRefreshToken instead.
+      ExplicitAuthFlows: [ALLOW_USER_SRP_AUTH]
+      RefreshTokenRotation:
+        Feature: ENABLED
+        RetryGracePeriodSeconds: 30
+      AccessTokenValidity: 15
+      IdTokenValidity: 15
+      RefreshTokenValidity: 90
+      TokenValidityUnits:
+        AccessToken: minutes
+        IdToken: minutes
+        RefreshToken: days
+      EnableTokenRevocation: true
+      PreventUserExistenceErrors: ENABLED
+
+  AiUsersGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      UserPoolId: !Ref UserPool
+      GroupName: ai-users
+      Description: May use the AI routes, which spend the OpenAI credit.
+
+  AdminsGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      UserPoolId: !Ref UserPool
+      GroupName: admins
+      Description: Administrators. Also allowed to use AI.
+
+  # ------------------------------------------------------------------- API
+  HttpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      Auth:
+        DefaultAuthorizer: Cognito
+        Authorizers:
+          Cognito:
+            IdentitySource: $request.header.Authorization
+            JwtConfiguration:
+              issuer: !Sub https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPool}
+              audience: [!Ref UserPoolClient]
+      # Shared by every user. A per-user limit on non-AI routes is not built yet.
+      DefaultRouteSettings:
+        ThrottlingBurstLimit: 50
+        ThrottlingRateLimit: 20
+
+  ApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Description: Every non-AI route. Has no permission to read the OpenAI key.
+      Handler: workoutlog.api_app.handler
+      Timeout: 10
+      MemorySize: 512
+      Environment:
+        Variables:
+          COGNITO_CLIENT_ID: !Ref UserPoolClient
+          APP_ORIGIN: !Ref AppOrigin
+          REFRESH_TOKEN_DAYS: "90"
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - dynamodb:GetItem
+                - dynamodb:PutItem
+                - dynamodb:UpdateItem
+                - dynamodb:DeleteItem
+                - dynamodb:Query
+                - dynamodb:ConditionCheckItem
+              Resource: !GetAtt Table.Arn
+      Events:
+        Health:      { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Path: /health, Method: GET, Auth: { Authorizer: NONE } } }
+        Me:          { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Path: /v1/me, Method: GET } }
+        ListDays:    { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Path: /v1/days, Method: GET } }
+        ReadDay:     { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Path: "/v1/days/{date}", Method: GET } }
+        PatchDay:    { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Path: "/v1/days/{date}", Method: PATCH } }
+        AddExercise: { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Path: "/v1/days/{date}/exercises", Method: POST } }
+        PutExercise: { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Path: "/v1/days/{date}/exercises/{key}", Method: PUT } }
+        DelExercise: { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Path: "/v1/days/{date}/exercises/{key}", Method: DELETE } }
+        MoveExercise: { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Path: "/v1/days/{date}/exercises/{key}/move", Method: POST } }
+        ReadRequest: { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Path: "/v1/requests/{key}", Method: GET } }
+        # /session is signed in (JWT). /refresh and /signout start from the
+        # cookie, so they skip the authorizer and check Origin in code instead.
+        AuthSession: { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Path: /v1/auth/session, Method: POST } }
+        AuthRefresh: { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Path: /v1/auth/refresh, Method: POST, Auth: { Authorizer: NONE } } }
+        AuthSignOut: { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Path: /v1/auth/signout, Method: POST, Auth: { Authorizer: NONE } } }
+
+  AssistantFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Description: The routes that spend OpenAI credit. The only reader of the key.
+      Handler: workoutlog.assistant_app.handler
+      # HTTP API gives up at 30 s; the assistant keeps its own 25 s deadline.
+      Timeout: 29
+      MemorySize: 1024
+      Environment:
+        Variables:
+          DAILY_AI_LIMIT: !Ref DailyAiLimit
+          OPENAI_KEY_PARAM: !Ref OpenAIKeyParam
+          OPENAI_TIMEOUT: "22"
+          ASSISTANT_MODEL: !Ref AssistantModel
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - dynamodb:GetItem
+                - dynamodb:PutItem
+                - dynamodb:UpdateItem
+                - dynamodb:DeleteItem
+                - dynamodb:Query
+                - dynamodb:ConditionCheckItem
+              Resource: !GetAtt Table.Arn
+            - Effect: Allow
+              Action: ssm:GetParameter
+              Resource: !Sub arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter${OpenAIKeyParam}
+      Events:
+        Finish: { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Path: "/v1/days/{date}/finish", Method: POST } }
+
+  ApiLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${ApiFunction}
+      RetentionInDays: 30
+
+  AssistantLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${AssistantFunction}
+      RetentionInDays: 30
+
+  # ------------------------------------------------------------------ web
+  WebBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: { SSEAlgorithm: AES256 }
+
+  WebBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref WebBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          # Only this distribution, signing with OAC, can read the app.
+          - Sid: CloudFrontReadOnly
+            Effect: Allow
+            Principal: { Service: cloudfront.amazonaws.com }
+            Action: s3:GetObject
+            Resource: !Sub ${WebBucket.Arn}/*
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:distribution/${Distribution}
+          - Sid: TlsOnly
+            Effect: Deny
+            Principal: "*"
+            Action: s3:*
+            Resource: [!GetAtt WebBucket.Arn, !Sub "${WebBucket.Arn}/*"]
+            Condition:
+              Bool: { aws:SecureTransport: "false" }
+
+  WebOriginAccess:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub ${AWS::StackName}-web
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  SecurityHeaders:
+    Type: AWS::CloudFront::ResponseHeadersPolicy
+    Properties:
+      ResponseHeadersPolicyConfig:
+        Name: !Sub ${AWS::StackName}-security
+        SecurityHeadersConfig:
+          # No inline script, no third-party script. The app talks to its own
+          # origin and, for SRP sign-in, to Cognito directly.
+          ContentSecurityPolicy:
+            Override: true
+            ContentSecurityPolicy: !Sub >-
+              default-src 'self'; script-src 'self'; style-src 'self';
+              img-src 'self' data:; font-src 'self'; media-src 'self' blob:;
+              connect-src 'self' https://cognito-idp.${AWS::Region}.amazonaws.com;
+              worker-src 'self'; manifest-src 'self'; object-src 'none';
+              base-uri 'none'; form-action 'self'; frame-ancestors 'none'
+          StrictTransportSecurity:
+            Override: true
+            AccessControlMaxAgeSec: 63072000
+            IncludeSubdomains: true
+          ContentTypeOptions:
+            Override: true
+          FrameOptions:
+            Override: true
+            FrameOption: DENY
+          ReferrerPolicy:
+            Override: true
+            ReferrerPolicy: same-origin
+        CustomHeadersConfig:
+          Items:
+            - Header: Permissions-Policy
+              Value: "camera=(), geolocation=(), microphone=(self)"
+              Override: true
+
+  Distribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Comment: !Sub ${AWS::StackName}
+        HttpVersion: http2and3
+        PriceClass: PriceClass_100
+        DefaultRootObject: index.html
+        ViewerCertificate:
+          CloudFrontDefaultCertificate: true
+        Origins:
+          - Id: web
+            DomainName: !GetAtt WebBucket.RegionalDomainName
+            OriginAccessControlId: !GetAtt WebOriginAccess.Id
+            S3OriginConfig:
+              OriginAccessIdentity: ""
+          - Id: api
+            DomainName: !Sub ${HttpApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}
+            CustomOriginConfig:
+              OriginProtocolPolicy: https-only
+              OriginSSLProtocols: [TLSv1.2]
+        DefaultCacheBehavior:
+          TargetOriginId: web
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods: [GET, HEAD]
+          Compress: true
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6          # Managed-CachingOptimized
+          ResponseHeadersPolicyId: !Ref SecurityHeaders
+        CacheBehaviors:
+          # API replies are never cached, and every viewer header but Host
+          # (Authorization, Cookie, Origin, Idempotency-Key) reaches the API.
+          - PathPattern: /v1/*
+            TargetOriginId: api
+            ViewerProtocolPolicy: https-only
+            AllowedMethods: [GET, HEAD, OPTIONS, PUT, PATCH, POST, DELETE]
+            Compress: true
+            CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad        # Managed-CachingDisabled
+            OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac # Managed-AllViewerExceptHostHeader
+            ResponseHeadersPolicyId: !Ref SecurityHeaders
+          - PathPattern: /health
+            TargetOriginId: api
+            ViewerProtocolPolicy: https-only
+            AllowedMethods: [GET, HEAD]
+            CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
+            OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac
+            ResponseHeadersPolicyId: !Ref SecurityHeaders
+
+Outputs:
+  AppUrl:
+    Description: The app and the API, on one origin. Pass this back as AppOrigin.
+    Value: !Sub https://${Distribution.DomainName}
+  Region:
+    Value: !Ref AWS::Region
+  UserPoolId:
+    Value: !Ref UserPool
+  UserPoolClientId:
+    Value: !Ref UserPoolClient
+  TableName:
+    Value: !Ref Table
+  WebBucket:
+    Value: !Ref WebBucket
+  DistributionId:
+    Value: !Ref Distribution
+  ApiEndpoint:
+    Description: Direct API Gateway URL. Still needs a JWT; use AppUrl normally.
+    Value: !Sub https://${HttpApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}
