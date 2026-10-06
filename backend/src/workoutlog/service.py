@@ -8,23 +8,7 @@ from typing import Any
 
 from .errors import ApiError
 from .models import MAX_EXERCISES_PER_DAY, DayPatch, ExerciseIn
-from .repo import Repo, next_order, now_iso
-
-# Fields that are worth keeping a day around for once its last exercise is gone.
-# The brief says summary or notes; bodyweight is included because dropping a
-# recorded weight would be silent data loss.
-KEEPS_DAY_ALIVE = ("summary", "notes", "bodyweight", "summaryGeneratedAt")
-
-
-def _prune(day: dict | None) -> dict | None:
-    """An empty day with nothing worth keeping is removed, not stored blank."""
-    if day is None:
-        return None
-    if day.get("exercises"):
-        return day
-    if any(day.get(field) not in (None, "") for field in KEEPS_DAY_ALIVE):
-        return day
-    return None
+from .repo import Repo, RequestRecord, next_order, now_iso, prune_day as _prune
 
 
 def _blank(date: str) -> dict:
@@ -57,7 +41,7 @@ def patch_day(repo: Repo, sub: str, date: str, patch: DayPatch) -> dict | None:
 
 
 def add_exercise(repo: Repo, sub: str, date: str, exercise: ExerciseIn,
-                 logged_at: str | None = None) -> dict:
+                 logged_at: str | None = None, request: RequestRecord | None = None) -> dict:
     stamp = logged_at or now_iso()
 
     def apply(day: dict | None) -> dict:
@@ -69,7 +53,7 @@ def add_exercise(repo: Repo, sub: str, date: str, exercise: ExerciseIn,
         exercises[f"{order:02d}"] = exercise.stored(order, stamp)
         return day
 
-    return repo.mutate_day(sub, date, apply)
+    return repo.mutate_day(sub, date, apply, request=request)
 
 
 def replace_exercise(repo: Repo, sub: str, date: str, key: str, exercise: ExerciseIn) -> dict:
@@ -101,8 +85,9 @@ def remove_exercise(repo: Repo, sub: str, date: str, key: str) -> dict | None:
     return repo.mutate_day(sub, date, apply)
 
 
-def move_exercise(repo: Repo, sub: str, date: str, key: str, to_date: str) -> dict:
-    return repo.move_exercise(sub, date, to_date, key)
+def move_exercise(repo: Repo, sub: str, date: str, key: str, to_date: str,
+                  request: RequestRecord | None = None) -> dict:
+    return repo.move_exercise(sub, date, to_date, key, request=request)
 
 
 def replace_day(repo: Repo, sub: str, date: str, day: dict | None) -> dict | None:

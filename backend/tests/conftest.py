@@ -129,3 +129,61 @@ def seeded(api):
         "sets": [{"minutes": 19.8, "distance": 1.07}],
     })
     return client
+
+
+APP_ORIGIN = "https://app.example.test"
+
+
+class FakeSessions:
+    """Stands in for Cognito's refresh-token calls. Rotation is strict here
+    (the old token dies at once), which is stricter than Cognito's 30 s grace."""
+
+    def __init__(self):
+        self.live: dict[str, str] = {}          # refresh token -> sub
+        self.revoked: list[str] = []
+        self.signed_out_everywhere: list[str] = []
+        self._n = 0
+
+    def issue(self, sub: str) -> str:
+        self._n += 1
+        token = f"rt-{sub}-{self._n}"
+        self.live[token] = sub
+        return token
+
+    @staticmethod
+    def id_token(sub: str) -> str:
+        import base64
+        payload = base64.urlsafe_b64encode(json.dumps({"sub": sub}).encode()).decode().rstrip("=")
+        return f"h.{payload}.s"
+
+    def rotate(self, refresh_token: str) -> dict:
+        from workoutlog.sessions import SessionExpired
+        sub = self.live.pop(refresh_token, None)
+        if sub is None:
+            raise SessionExpired("NotAuthorizedException")
+        return {"accessToken": f"at-{sub}", "idToken": self.id_token(sub),
+                "refreshToken": self.issue(sub), "expiresIn": 900}
+
+    def revoke(self, refresh_token: str) -> None:
+        self.live.pop(refresh_token, None)
+        self.revoked.append(refresh_token)
+
+    def sign_out_everywhere(self, access_token: str) -> None:
+        from workoutlog.sessions import SessionExpired
+        if not access_token.startswith("at-"):
+            raise SessionExpired("NotAuthorizedException")
+        sub = access_token.removeprefix("at-")
+        for token in [t for t, s in self.live.items() if s == sub]:
+            self.revoke(token)
+        self.signed_out_everywhere.append(sub)
+
+
+@pytest.fixture
+def sessions(api, monkeypatch):
+    """A fake Cognito behind the /v1/auth routes, and APP_ORIGIN set."""
+    from workoutlog import api_app, sessions as sessions_module
+
+    monkeypatch.setenv("APP_ORIGIN", APP_ORIGIN)
+    fake = FakeSessions()
+    api_app.app.dependency_overrides[sessions_module.get_sessions] = lambda: fake
+    return fake

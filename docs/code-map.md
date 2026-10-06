@@ -76,10 +76,18 @@ the OpenAI key, so a bug here cannot leak it.
 | `PUT /v1/days/{date}/exercises/{key}` | Replace an exercise |
 | `DELETE /v1/days/{date}/exercises/{key}` | Remove an exercise |
 | `POST /v1/days/{date}/exercises/{key}/move` | Move an exercise to another date |
+| `GET /v1/requests/{key}` | Whether a request with this `Idempotency-Key` already ran |
+| `POST /v1/auth/session`, `/refresh`, `/signout` | The refresh-token cookie. These live in `sessions.py` and are included here |
 
 Also here: `access_log` (one JSON log line per request, never the body),
 `get_repo` (one `Repo` per Lambda container), the `day_date` and
 `exercise_key` path validators, and `handler`, the Lambda entry point.
+
+`POST .../exercises` and `.../move` accept an optional `Idempotency-Key`
+header. `_idempotent` checks for an earlier request with that key, replays its
+response if there is one, and otherwise passes a `RequestRecord` down so the
+key is saved in the same transaction as the write. A key reused for a
+different request gets 422 `idempotency_key_reused`.
 
 Each route is one call into `service.py`. Keep it that way.
 
@@ -95,11 +103,37 @@ the key.
   today"). Phase 6 adds `/v1/assistant` and `/v1/assistant/undo`.
 - `guard_ai` checks the user is in an AI group, then bumps the daily counter
   (`DAILY_AI_LIMIT`, counted per UTC day).
-- `get_summarizer` imports the OpenAI SDK only when a request gets that far,
-  and gives tests a place to swap in a fake.
+- `get_summarizer` returns a function that imports the OpenAI SDK only when
+  it is called, so requests that stop at 400, 409, 403 or 429 never load it.
+  Tests swap in a fake here.
+- If the summary fails (502, 402 or an empty reply), `finish_day` gives the
+  usage count back with `repo.release_usage`.
 
 **Open it when:** "Done for today" misbehaves, or you are changing the daily
 limit.
+
+### `sessions.py` - the refresh-token cookie
+
+The three `/v1/auth/*` routes. They are the only routes that start from a
+cookie rather than a JWT that API Gateway checked.
+
+- `CognitoSessions` wraps the three Cognito calls: `rotate`
+  (`GetTokensFromRefreshToken`), `revoke` (`RevokeToken`) and
+  `sign_out_everywhere` (`GlobalSignOut`). A rejected token raises
+  `SessionExpired`; an outage becomes 502 `auth_unavailable`. Tests replace
+  it through `get_sessions`.
+- `require_same_origin` runs on all three routes: the `Origin` header must
+  equal `APP_ORIGIN`, otherwise 403 `bad_origin`. If `APP_ORIGIN` is unset,
+  every request is refused.
+- The cookie is `wl_rt`: `HttpOnly; Secure; SameSite=Strict; Path=/v1/auth`,
+  lasting `REFRESH_TOKEN_DAYS`.
+- `/session` checks that the new token belongs to the signed-in user (403
+  `session_mismatch`). `/refresh` returns access and ID tokens and never the
+  refresh token. `/signout` clears the cookie, and with `everywhere` also
+  needs a Bearer access token.
+
+**Open it when:** sign-in survives a reload but not a restart, you get a 401
+`session_expired` or `signed_out`, or a 403 `bad_origin`.
 
 ### `auth.py` - who is calling
 
@@ -132,8 +166,8 @@ adding a field to a set or exercise.
   `remove_exercise`, `move_exercise`, and `replace_day` (for undo, phase 6).
 - Each one builds a small `apply(day)` function and hands it to
   `repo.mutate_day`, which does the locking and retrying.
-- `_prune` deletes a day that has nothing left worth keeping. The fields that
-  keep a day alive are in `KEEPS_DAY_ALIVE`.
+- `_prune` (`repo.prune_day`) deletes a day that has nothing left worth
+  keeping. The fields that keep a day alive are in `repo.KEEPS_DAY_ALIVE`.
 - The REST routes and, from phase 6, the assistant's tools both call this
   file, so voice and form edits behave the same.
 
@@ -149,15 +183,23 @@ The only file that talks to the database. One table, keyed like this:
 | `DAY#YYYY-MM-DD` | One workout day | `version` guards against racing writes |
 | `ASSIST#<time>#<rand>` | One assistant turn | Expires after 14 days (phase 6) |
 | `USAGE#YYYY-MM-DD` | AI calls that day | Expires after 3 days |
+| `REQ#<uuid>` | One `Idempotency-Key`: request hash, status, stored response | Expires after 24 hours |
 
 `PK` is always `USER#<cognito sub>`, so every query stays inside one user's
 data.
 
 - `mutate_day`: read, apply the change, then write only if `version` hasn't
-  moved. The same transaction bumps `dataVersion`. It retries 3 times, then
-  returns 409 `version_conflict`.
+  moved. The same transaction bumps `dataVersion`, and saves the `REQ#` item
+  when a `RequestRecord` is passed. It retries 3 times, then returns 409
+  `version_conflict`. If the `REQ#` item already exists, it raises
+  `RequestReplayed` instead of retrying.
 - `move_exercise`: one transaction across both days, so an exercise is never
-  in both or neither.
+  in both or neither. Takes a `RequestRecord` the same way.
+- `get_request`: reads a `REQ#` item.
+- `prune_day`: the one rule for when a day with no exercises is deleted.
+- `list_days` refuses a cursor that isn't one of the caller's own day keys
+  (400 `bad_cursor`). `data_version` reads strongly consistent, so a poll
+  right after a write can't get a stale 304.
 - `set_summary_once`: a conditional write, so two simultaneous "Done for
   today" calls can't both save a summary.
 - `bump_usage` / `release_usage`: the daily AI counter.
@@ -251,6 +293,8 @@ All under `backend/tests/`. Run them with `make test-py`.
 | `test_api_days.py` | Reading and patching days, the 304 path, paging, error format, empty days deleted |
 | `test_api_exercises.py` | Add, replace, remove, move; exercise numbering; catalog fill-in; validation messages; the 99 limit |
 | `test_auth.py` | Reading JWT claims and groups, failing closed, no auth bypass in the source |
+| `test_sessions.py` | The cookie routes: Origin check, cookie attributes, rotation, session mismatch, sign-out, no tokens in logs, Cognito error mapping |
+| `test_idempotency.py` | Retries replay instead of writing twice, reused keys are rejected, keys stay per user, a racing duplicate is caught by the transaction |
 | `test_catalog_sync.py` | The three catalog copies match, and the catalog is well formed |
 | `test_finish.py` | "Done for today": runs once, sees only computed facts, survives a race, returns 400/403/429 correctly |
 | `test_isolation.py` | A second user can't see or change the first user's data |
@@ -295,6 +339,8 @@ our own code into failures.
 | Change what a request may contain | `models.py` |
 | 422 `validation_error` | `models.py` for the body; `day_date` / `exercise_key` in `api_app.py` for the path |
 | 401 `unauthorized`, 403 `ai_not_enabled` | `auth.py` |
+| 401 `signed_out` / `session_expired`, 403 `bad_origin` / `session_mismatch`, 502 `auth_unavailable` | `sessions.py` |
+| 422 `idempotency_key_reused` | `api_app._idempotent` |
 | 404 `not_found` | `service.py`, `repo.move_exercise` |
 | 400 `day_full` | `service.add_exercise`, `repo.next_order` |
 | 400 `bad_cursor` | `repo._decode_cursor` |
@@ -321,6 +367,9 @@ Every setting is an environment variable with a default. From phase 2,
 | `TABLE_NAME` | `workout-log` | `repo.py` | DynamoDB table name |
 | `LOG_LEVEL` | `INFO` | `api_app.py`, `assistant_app.py` | Log verbosity |
 | `GIT_COMMIT` | `unknown` | `auth.py` | Commit shown by `/health` |
+| `COGNITO_CLIENT_ID` | (none) | `sessions.py` | App client the refresh token belongs to |
+| `APP_ORIGIN` | (none: auth routes refuse everything) | `sessions.py` | The only `Origin` the `/v1/auth/*` routes accept, e.g. `https://d123.cloudfront.net` |
+| `REFRESH_TOKEN_DAYS` | `90` | `sessions.py` | Cookie `Max-Age`; match the app client's refresh-token validity |
 | `DAILY_AI_LIMIT` | `100` | `assistant_app.py` | AI calls per user per UTC day |
 | `OPENAI_KEY_PARAM` | `/workout-log/openai-api-key` | `assistant/openai_client.py` | SSM parameter holding the key |
 | `OPENAI_TIMEOUT` | `22` | `assistant/openai_client.py` | Seconds before a model call gives up |

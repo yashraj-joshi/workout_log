@@ -12,6 +12,7 @@ from contextlib import contextmanager
 
 import boto3
 import openai
+from botocore.exceptions import BotoCoreError, ClientError
 from openai import OpenAI
 
 from ..errors import ApiError
@@ -69,6 +70,10 @@ def ai_errors():
     the exception type: the payload holds transcripts."""
     try:
         yield
+    except (ClientError, BotoCoreError) as exc:
+        # Reading the key from SSM failed: OpenAI was never reached.
+        log.error("openai key unavailable: %s", type(exc).__name__)
+        raise ApiError(502, "ai_unavailable", "Couldn't reach the AI. Nothing was logged.") from exc
     except (openai.APITimeoutError, openai.APIConnectionError, openai.InternalServerError) as exc:
         log.warning("openai unavailable: %s", type(exc).__name__)
         raise ApiError(502, "ai_unavailable", "Couldn't reach the AI. Nothing was logged.") from exc

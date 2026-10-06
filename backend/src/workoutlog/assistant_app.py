@@ -40,11 +40,17 @@ def get_repo() -> Repo:
     return _repo
 
 
-def get_summarizer():
-    """Injectable so tests never reach OpenAI. Imported lazily: importing the
-    SDK costs cold-start time on requests that turn out to be 403 or 429."""
+def _write_summary(facts_text: str) -> str:
+    # Imported here, not at module level: the SDK costs cold-start time, and
+    # most finish requests that stop early (400, 409, 403, 429) never need it.
     from .assistant.summarizer import write_summary
-    return write_summary
+    return write_summary(facts_text)
+
+
+def get_summarizer():
+    """Injectable so tests never reach OpenAI. Returns a function that imports
+    the SDK only when it is called, after every cheaper check has passed."""
+    return _write_summary
 
 
 def day_date(date: str = Path(..., min_length=10, max_length=10)) -> str:
@@ -127,9 +133,15 @@ def finish_day(
 
     history = repo.list_days(user.sub, limit=200)["days"]
     facts = summary.day_facts(day, [d for d in history if d.get("date") != date])
-    text = (summarizer(summary.facts_text(facts)) or "").strip()
-    if not text:
-        raise ApiError(502, "ai_unavailable", "Couldn't reach the AI. Nothing was logged.")
+    try:
+        text = (summarizer(summary.facts_text(facts)) or "").strip()
+        if not text:
+            raise ApiError(502, "ai_unavailable", "Couldn't reach the AI. Nothing was logged.")
+    except ApiError:
+        # No summary was written, so the attempt shouldn't use up one of the
+        # day's calls. None of these failures is something a user can trigger.
+        repo.release_usage(user.sub, utc_today())
+        raise
 
     return {"day": repo.set_summary_once(user.sub, date, text, notes=notes)}
 

@@ -146,7 +146,7 @@ make test
 Expected:
 
 ```
-112 passed
+186 passed
   no frontend tests yet (phase 4)
 ```
 
@@ -249,7 +249,7 @@ make check-secrets
 Expected last two lines:
 
 ```
-112 passed
+186 passed
 check-secrets: OK
 ```
 

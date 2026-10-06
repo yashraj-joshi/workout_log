@@ -418,7 +418,7 @@ Nothing else does. `store=false` means OpenAI does not retain it as state.
 | --- | --- | --- | --- |
 | App | PWA | Native iOS | No store, no $99/yr, instant updates |
 | Frontend | Plain ES modules | React/Vue | No build step; port was direct |
-| Sign-in | Built-in SRP form | Cognito hosted UI | Redirects are unreliable from a home-screen app |
+| Sign-in | Built-in SRP form | Cognito Managed Login | Never leaves the app or drops its state; the password is never sent at sign-in |
 | Refresh token | httpOnly cookie + rotation | `localStorage` | Injected script can't steal a 90-day credential; costs three small routes |
 | API | HTTP API | REST API | JWT authorizer built in, ~70% cheaper |
 | Database | DynamoDB | RDS | Every access is a key lookup; $0 idle |

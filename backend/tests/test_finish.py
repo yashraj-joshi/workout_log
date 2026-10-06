@@ -6,7 +6,12 @@ is a PATCH and must never revive the button.
 
 from __future__ import annotations
 
+import subprocess
+import sys
+
 import pytest
+
+from workoutlog.errors import ApiError
 
 DATE = "2026-09-25"
 
@@ -115,6 +120,42 @@ def test_an_empty_model_reply_is_not_saved(api, assistant, repo):
     response = assistant(summarizer=lambda _f: "   ").post(f"/v1/days/{DATE}/finish")
     assert response.status_code == 502
     assert "summaryGeneratedAt" not in repo.get_day("user-1", DATE)
+
+
+@pytest.mark.parametrize("summarizer", [
+    lambda _f: "   ",
+    lambda _f: (_ for _ in ()).throw(ApiError(502, "ai_unavailable", "down")),
+    lambda _f: (_ for _ in ()).throw(ApiError(402, "openai_quota", "empty")),
+])
+def test_a_failed_summary_gives_the_usage_count_back(api, assistant, repo, summarizer):
+    _log(api())
+    assert assistant(summarizer=summarizer).post(f"/v1/days/{DATE}/finish").status_code in (402, 502)
+    # The next successful call is the first one counted today.
+    assistant().post(f"/v1/days/{DATE}/finish")
+    from workoutlog.assistant_app import utc_today
+    assert repo.bump_usage("user-1", utc_today()) == 2
+
+
+def test_the_openai_sdk_is_not_imported_until_the_model_is_called():
+    """get_summarizer runs as a dependency on every finish request, including
+    ones that stop at 400/409/403/429. It must not pull in the SDK."""
+    code = ("import sys; from workoutlog import assistant_app; "
+            "assistant_app.get_summarizer(); "
+            "print('openai' in sys.modules)")
+    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True,
+                            check=True, cwd=str(__import__("pathlib").Path(__file__).parents[1] / "src"))
+    assert result.stdout.strip() == "False"
+
+
+def test_a_missing_key_parameter_is_502_not_500(dynamo, monkeypatch):
+    """SSM failing means OpenAI was never reached; that is ai_unavailable."""
+    from workoutlog.assistant import openai_client, summarizer
+    openai_client.reset_cache()
+    monkeypatch.setenv("OPENAI_KEY_PARAM", "/workout-log/test-missing")
+    with pytest.raises(ApiError) as caught:
+        summarizer.write_summary("Totals: 1 exercise")
+    assert (caught.value.status, caught.value.code) == (502, "ai_unavailable")
+    openai_client.reset_cache()
 
 
 def test_editing_a_generated_summary_does_not_reopen_the_day(api, assistant, repo):

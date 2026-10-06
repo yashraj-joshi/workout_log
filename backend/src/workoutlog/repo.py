@@ -1,7 +1,7 @@
 """DynamoDB access. One table, PK/SK.
 
   PK = USER#<cognito sub>
-  SK = PROFILE | DAY#YYYY-MM-DD | ASSIST#<iso>#<rand> | USAGE#YYYY-MM-DD
+  SK = PROFILE | DAY#YYYY-MM-DD | ASSIST#<iso>#<rand> | USAGE#YYYY-MM-DD | REQ#<uuid>
 
 Two invariants drive the design:
 
@@ -13,6 +13,10 @@ Two invariants drive the design:
    with the data, or a client would get a 304 for a log that just changed.
    That is why the day write and the counter bump go out as one
    TransactWriteItems rather than two calls.
+
+A REQ# item records one Idempotency-Key. For a write that is already one
+transaction, the key joins that same transaction, so the change and the record
+of it are saved together or not at all.
 """
 
 from __future__ import annotations
@@ -23,6 +27,7 @@ import json
 import os
 import secrets
 import time
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any, Callable
@@ -36,7 +41,22 @@ from .errors import ApiError
 MAX_PAGE = 500
 ASSIST_TTL_DAYS = 14
 USAGE_TTL_DAYS = 3
+REQUEST_TTL_HOURS = 24
 _RETRIES = 3
+
+
+@dataclass(frozen=True)
+class RequestRecord:
+    """An Idempotency-Key to save alongside a write: the key, a hash of what
+    was asked, and the status the route answers with."""
+    key: str
+    request_hash: str
+    http_status: int
+
+
+class RequestReplayed(Exception):
+    """The REQ# item already existed when the transaction ran: another request
+    with this key got there first. Nothing was written."""
 
 
 # --------------------------------------------------------------------------
@@ -88,6 +108,20 @@ def _decode_cursor(cursor: str | None) -> dict | None:
         raise ApiError(400, "bad_cursor", "That page cursor is not valid.") from exc
 
 
+def _cursor_belongs_to(start: Any, pk: str) -> bool:
+    """A cursor is just base64 JSON, so anyone can craft one. DynamoDB would
+    reject another partition's key anyway, but as a 500; this makes it a 400."""
+    return (isinstance(start, dict) and set(start) == {"PK", "SK"}
+            and start["PK"] == pk
+            and isinstance(start["SK"], str) and start["SK"].startswith("DAY#"))
+
+
+def _failed_at(exc: ClientError, index: int) -> bool:
+    """Whether item `index` of a cancelled transaction is one whose condition failed."""
+    reasons = exc.response.get("CancellationReasons") or []
+    return index < len(reasons) and reasons[index].get("Code") == "ConditionalCheckFailed"
+
+
 def _is_conditional_failure(exc: ClientError) -> bool:
     code = exc.response.get("Error", {}).get("Code", "")
     if code == "ConditionalCheckFailedException":
@@ -122,11 +156,13 @@ class Repo:
 
     # ------------------------------------------------------------- profile
     def data_version(self, sub: str) -> int:
-        """One GetItem. This is what makes an unchanged-log poll nearly free."""
+        """One GetItem. This is what makes an unchanged-log poll nearly free.
+        Strongly consistent: an eventually consistent read could still see the
+        old value just after a write and answer 304 for data that changed."""
         got = self.table.get_item(
             Key=self._profile_key(sub),
             ProjectionExpression="dataVersion",
-            ConsistentRead=False,
+            ConsistentRead=True,
         ).get("Item")
         return int(got.get("dataVersion", 0)) if got else 0
 
@@ -167,6 +203,8 @@ class Repo:
         }
         start = _decode_cursor(cursor)
         if start:
+            if not _cursor_belongs_to(start, self.pk(sub)):
+                raise ApiError(400, "bad_cursor", "That page cursor is not valid.")
             kwargs["ExclusiveStartKey"] = to_dynamo(start)
         result = self.table.query(**kwargs)
         days = [public_day(from_dynamo(item)) for item in result.get("Items", [])]
@@ -203,10 +241,42 @@ class Repo:
             op["Put"]["ExpressionAttributeValues"] = values
         return op
 
+    # ------------------------------------------------------------- requests
+    def get_request(self, sub: str, key: str) -> dict | None:
+        item = self.table.get_item(
+            Key={"PK": self.pk(sub), "SK": f"REQ#{key}"}, ConsistentRead=True
+        ).get("Item")
+        return from_dynamo(item) if item else None
+
+    def _request_put_op(self, sub: str, request: RequestRecord, response: dict) -> dict:
+        """Joins the write's own transaction. The condition is what turns a
+        racing duplicate into RequestReplayed rather than a second write."""
+        return {"Put": {
+            "TableName": self.table_name,
+            "Item": to_dynamo({
+                "PK": self.pk(sub), "SK": f"REQ#{request.key}", "type": "request",
+                "status": "done",
+                "requestHash": request.request_hash,
+                "httpStatus": request.http_status,
+                "response": response,
+                "createdAt": now_iso(),
+                "ttl": int(time.time()) + REQUEST_TTL_HOURS * 3600,
+            }),
+            "ConditionExpression": "attribute_not_exists(SK)",
+        }}
+
+    @staticmethod
+    def _written_day(op: dict) -> dict | None:
+        """The day exactly as a write op stores it, so the response saved with
+        an idempotency key is known before the transaction runs."""
+        return public_day(from_dynamo(op["Put"]["Item"])) if "Put" in op else None
+
     def mutate_day(self, sub: str, date: str,
-                   change: Callable[[dict | None], dict | None]) -> dict | None:
+                   change: Callable[[dict | None], dict | None],
+                   request: RequestRecord | None = None) -> dict | None:
         """Read, apply `change`, write conditionally. Retries up to three times
-        when someone else wrote the same day in between."""
+        when someone else wrote the same day in between. With `request`, the
+        idempotency key is saved in the same transaction."""
         last: ClientError | None = None
         for attempt in range(_RETRIES):
             current = self.get_day(sub, date)
@@ -214,13 +284,18 @@ class Repo:
             updated = change(copy.deepcopy(current) if current else None)
             if updated is None and current is None:
                 return None
+            ops = [
+                self._day_write_op(sub, date, updated, version, existed=current is not None),
+                self._bump_version_op(sub),
+            ]
+            if request:
+                ops.append(self._request_put_op(sub, request, {"day": self._written_day(ops[0])}))
             try:
-                self._client.transact_write_items(TransactItems=[
-                    self._day_write_op(sub, date, updated, version, existed=current is not None),
-                    self._bump_version_op(sub),
-                ])
+                self._client.transact_write_items(TransactItems=ops)
                 return None if updated is None else self.get_day(sub, date)
             except ClientError as exc:
+                if request and _failed_at(exc, len(ops) - 1):
+                    raise RequestReplayed(request.key) from exc
                 if not _is_conditional_failure(exc):
                     raise
                 last = exc
@@ -228,7 +303,8 @@ class Repo:
         raise ApiError(409, "version_conflict",
                        "That day changed while you were saving. Reload and try again.") from last
 
-    def move_exercise(self, sub: str, from_date: str, to_date: str, key: str) -> dict:
+    def move_exercise(self, sub: str, from_date: str, to_date: str, key: str,
+                      request: RequestRecord | None = None) -> dict:
         """One transaction so the exercise is never in both days or neither."""
         if from_date == to_date:
             raise ApiError(400, "bad_request", "Pick a different date to move to.")
@@ -245,24 +321,26 @@ class Repo:
             moving = copy.deepcopy(source["exercises"][key])
             new_source = copy.deepcopy(source)
             new_source["exercises"].pop(key, None)
-            if not new_source["exercises"] and not any(
-                new_source.get(f) for f in ("summary", "notes", "bodyweight")
-            ):
-                new_source = None
+            new_source = prune_day(new_source)
 
             new_target = copy.deepcopy(target) if target else {"date": to_date, "exercises": {}}
             order = next_order(new_target.get("exercises") or {})
             moving["order"] = order
             new_target.setdefault("exercises", {})[f"{order:02d}"] = moving
 
+            ops = [
+                self._day_write_op(sub, from_date, new_source, source_version, existed=True),
+                self._day_write_op(sub, to_date, new_target, target_version, existed=target is not None),
+                self._bump_version_op(sub),
+            ]
+            if request:
+                ops.append(self._request_put_op(sub, request, {"day": self._written_day(ops[1])}))
             try:
-                self._client.transact_write_items(TransactItems=[
-                    self._day_write_op(sub, from_date, new_source, source_version, existed=True),
-                    self._day_write_op(sub, to_date, new_target, target_version, existed=target is not None),
-                    self._bump_version_op(sub),
-                ])
+                self._client.transact_write_items(TransactItems=ops)
                 return self.get_day(sub, to_date)
             except ClientError as exc:
+                if request and _failed_at(exc, len(ops) - 1):
+                    raise RequestReplayed(request.key) from exc
                 if not _is_conditional_failure(exc):
                     raise
                 last = exc
@@ -362,6 +440,24 @@ class Repo:
 # --------------------------------------------------------------------------
 
 _INTERNAL = ("PK", "SK", "type", "ttl")
+
+# Fields that are worth keeping a day around for once its last exercise is gone.
+# The brief says summary or notes; bodyweight is included because dropping a
+# recorded weight would be silent data loss, and summaryGeneratedAt because it
+# is the run-once marker for "Done for today".
+KEEPS_DAY_ALIVE = ("summary", "notes", "bodyweight", "summaryGeneratedAt")
+
+
+def prune_day(day: dict | None) -> dict | None:
+    """An empty day with nothing worth keeping is removed, not stored blank.
+    Every write path uses this, so there is one rule for when a day goes."""
+    if day is None:
+        return None
+    if day.get("exercises"):
+        return day
+    if any(day.get(field) not in (None, "") for field in KEEPS_DAY_ALIVE):
+        return day
+    return None
 
 
 def public_day(item: dict) -> dict:

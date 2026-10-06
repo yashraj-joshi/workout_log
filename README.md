@@ -119,7 +119,7 @@ make test          # backend tests, and frontend tests once they exist
 make check-secrets # before every commit
 ```
 
-Expected: `112 passed`, then `check-secrets: OK`.
+Expected: `186 passed`, then `check-secrets: OK`.
 
 ## Build phases
 

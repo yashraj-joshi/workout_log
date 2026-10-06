@@ -5,7 +5,7 @@ function, in what order, and where it can stop early. For what each file is
 for, read [code-map.md](code-map.md). For why, read
 [00-architecture.md](00-architecture.md).
 
-Section 7 records what is being changed in the working tree right now.
+Section 7 records what the latest change touched.
 
 All paths are under `backend/src/workoutlog/` unless stated otherwise.
 
@@ -134,10 +134,11 @@ never called `/v1/me`.
 
 ```
 list_days
-  -> repo.data_version(sub)                        GetItem PROFILE, eventually consistent
+  -> repo.data_version(sub)                        GetItem PROFILE, strongly consistent
   -> no cursor and If-None-Match matches version?  -> 304, empty body, ETag
   -> repo.list_days(sub, cursor, limit)
        -> _decode_cursor(cursor)                   bad base64/JSON -> 400 bad_cursor
+       -> _cursor_belongs_to(start, pk(sub))       not {PK: caller, SK: DAY#...} -> 400 bad_cursor
        -> table.query(PK=USER#sub, SK begins DAY#, newest first, Limit)
        -> public_day(from_dynamo(item)) per item   strips PK/SK/type/ttl
        -> _encode_cursor(LastEvaluatedKey)
@@ -146,7 +147,8 @@ list_days
 
 The version is read **before** the query. If a write lands between the two
 calls, the page holds newer data under the older ETag. The client then
-refetches on its next poll, so this is safe.
+refetches on its next poll, so this is safe. The read is strongly consistent,
+so a poll straight after a write can't see the old version and answer 304.
 
 ### `GET /v1/days/{date}`
 
@@ -201,7 +203,7 @@ What each `apply` does:
 walks `catalog.lookup_rules()` (first match wins) to fill a missing `group`
 and `muscles`. No lookup match means `Mobility` and no muscles.
 
-`_prune` (`service.py:19`) returns `None` for a day with no exercises and
+`_prune` (`repo.prune_day`) returns `None` for a day with no exercises and
 none of `KEEPS_DAY_ALIVE`. `mutate_day` then sends a conditional `Delete`
 rather than a `Put`, and the route returns `{"day": null}`.
 
@@ -216,17 +218,87 @@ move_exercise -> service.move_exercise -> repo.move_exercise(sub, from, to, key)
   repeat up to 3 times:
     source = get_day(from)     missing or key absent -> 404 not_found
     target = get_day(to)
-    build new_source (key removed; None if nothing left worth keeping)
+    build new_source (key removed, then prune_day: the same rule as mutate_day)
     build new_target (exercise appended with next_order, new key)
     transact_write_items([
         _day_write_op(from, new_source, source.version, existed=True),
         _day_write_op(to,   new_target, target.version, existed=target is not None),
         _bump_version_op(),
+        _request_put_op(...)       only with an Idempotency-Key, see below
     ])
     success -> return get_day(to)
+    the REQ# put failed -> raise RequestReplayed (no retry)
     conditional failure -> back off, retry
   -> 409 version_conflict
 ```
+
+### `Idempotency-Key` on `POST .../exercises` and `.../move`
+
+Both routes take an optional `Idempotency-Key` header through the
+`idempotency_key` dependency (not a UUID -> 400 `validation_error`). Without
+one, the route runs as above. With one:
+
+```
+_idempotent(repo, sub, key, request, body, status, run)        api_app.py
+  record = RequestRecord(key, sha256(method + path + canonical body), status)
+  stored = repo.get_request(sub, key)                 consistent GetItem REQ#<key>
+  stored?  -> _replay(stored, hash)
+                different hash        -> 422 idempotency_key_reused
+                status != done        -> 409 request_in_progress + Retry-After (phase 6)
+                otherwise             -> the stored status and body; nothing written
+  run(record)
+    -> service.add_exercise / move_exercise(..., request=record)
+    -> repo.mutate_day / move_exercise
+         the REQ# Put joins the same transaction, condition attribute_not_exists(SK),
+         storing {"day": public_day(the item being written)}
+  RequestReplayed (a copy of this request committed first)
+           -> _replay(repo.get_request(sub, key), hash)
+```
+
+The hash covers the validated body, so key order and spacing don't change it,
+but a different date, exercise or set does. A request that fails (404, 400,
+409) writes nothing, including the key, so the same key can run again later.
+
+### `GET /v1/requests/{key}`
+
+```
+read_request -> _valid_uuid(key) -> repo.get_request(sub, key)
+             None -> 404 not_found
+             <- {"state": "done"}
+```
+
+Only the caller's partition is read, so another user's key is always 404.
+
+### `/v1/auth/*` (`sessions.py`, included into ApiFunction)
+
+In API Gateway, `/refresh` and `/signout` have no authorizer; `/session`
+keeps the JWT authorizer. All three run `require_same_origin` before anything
+else:
+
+```
+require_same_origin    Origin != APP_ORIGIN, or APP_ORIGIN unset -> 403 bad_origin
+
+POST /v1/auth/session   (JWT -> current_user; body SessionIn {refreshToken})
+  sessions.rotate(refreshToken)          dead token -> 401 session_expired
+  token_sub(new idToken) != user.sub     -> revoke the new token, 403 session_mismatch
+  <- {"ok": true} + Set-Cookie wl_rt=<new refresh token>
+
+POST /v1/auth/refresh   (cookie)
+  no wl_rt cookie                        -> 401 signed_out, cookie cleared
+  sessions.rotate(cookie)                dead token -> 401 session_expired, cookie cleared
+  <- {accessToken, idToken, expiresIn} + Set-Cookie wl_rt=<rotated>
+
+POST /v1/auth/signout   (cookie; body SignOutIn {everywhere})
+  everywhere and no Bearer               -> 401 unauthorized
+  everywhere -> sessions.sign_out_everywhere(bearer)   Cognito rejects it -> 401
+  cookie -> sessions.revoke(cookie)      already dead is fine
+  <- {"ok": true} + cookie cleared (Max-Age=0)
+```
+
+`CognitoSessions._call` maps Cognito errors: `NotAuthorizedException`,
+`RefreshTokenReuseException` and `UserNotFoundException` mean the token is
+dead (`SessionExpired`); anything else is 502 `auth_unavailable`. Every reply
+carries `Cache-Control: no-store`.
 
 ---
 
@@ -240,8 +312,7 @@ dependencies (in signature order)
   day_date        -> 400/422
   current_user    -> 401
   get_repo
-  get_summarizer  -> imports assistant.summarizer, which imports the openai
-                     SDK and openai_client (first time per container)
+  get_summarizer  -> returns _write_summary; nothing is imported yet
   body FinishIn   -> 422 (extra fields forbidden)
 
 finish_day                                              assistant_app.py:101
@@ -260,8 +331,10 @@ finish_day                                              assistant_app.py:101
        group_of, muscles_of, compact_line, is_cardio,
        sets_per_muscle, missing_areas (-> catalog.main_areas)
   6. summary.facts_text(facts)                plain lines for the model
-  7. summarizer(text) = assistant.summarizer.write_summary
-       with ai_errors():                      maps SDK errors -> 502 / 402
+  7. summarizer(text) = _write_summary -> imports assistant.summarizer (and
+     the openai SDK, first time per container) -> write_summary
+       with ai_errors():                      maps SDK errors -> 502 / 402,
+                                              SSM errors -> 502
          openai_client.client()
            api_key()  -> SSM GetParameter (first call per container only)
            OpenAI(timeout=OPENAI_TIMEOUT, max_retries=1)
@@ -270,6 +343,7 @@ finish_day                                              assistant_app.py:101
                                  input=text, store=False, ...)
        output_text trimmed to MAX_SUMMARY (600)
      empty text -> 502 ai_unavailable
+     any ApiError here -> repo.release_usage(sub, UTC today), then re-raise
   8. repo.set_summary_once(sub, date, text, notes)
        transact_write_items([
          Update DAY: SET summary, summaryGeneratedAt, notes?, version+1
@@ -300,7 +374,6 @@ there for later phases.
 | --- | --- |
 | `service.replace_day` | Undo (phase 6) |
 | `repo.put_turn`, `get_turn`, `recent_turns` | Assistant memory (phase 6) |
-| `repo.release_usage` | Giving back a usage count when an AI call fails before reaching OpenAI |
 | `export_csv.build`, `rows_for`, `filename` | Legacy import (phase 7). Today only tests call them |
 | `logic.day_load`, `heat_level`, `dominant_kind`, `previous_session`, `fmt_date_short` | Frontend twins in `web/js/logic.js` (phase 4). Only tests call them |
 | `catalog.common_names` | Frontend |
@@ -319,6 +392,7 @@ make test-py  ->  cd backend && pytest -q        (pytest.ini puts src/ on the pa
     api()      TestClient(api_app.app) with dependency_overrides:
                  current_user -> User looked up from the X-Test-Sub header
                  get_repo     -> the moto-backed repo
+    sessions   FakeSessions in place of get_sessions, APP_ORIGIN set
     assistant() same for assistant_app.app, plus
                  get_summarizer -> a fake that records the facts text
 ```
@@ -336,82 +410,33 @@ match, which `make sync-shared` keeps true by copying
 
 ---
 
-## 7. What is being modified right now
+## 7. What the latest change touched
 
-**Working tree:** only `docs/00-architecture.md` has changed (`git diff`:
-+13 / -11). **No Python, test, fixture or config file has changed, so no
-execution path in sections 1 to 6 changes.**
+Phase 2a closed the gaps between the code and the architecture doc:
 
-The edit, hunk by hunk:
+- **New:** `sessions.py` (the `/v1/auth/*` routes) and the
+  `Idempotency-Key` path on `POST .../exercises` and `.../move`, with
+  `GET /v1/requests/{key}` (section 3).
+- **Changed paths:** `data_version` reads strongly consistent; `list_days`
+  refuses a crafted cursor; `move_exercise` uses `prune_day`;
+  `get_summarizer` no longer imports the SDK; `finish_day` gives the usage
+  count back when the summary fails; `ai_errors` maps SSM failures to 502.
 
-| Where in `00-architecture.md` | Before | After |
-| --- | --- | --- |
-| "Sign-in" section, the "Why not ..." paragraph (around line 75) | "Why not the Cognito hosted UI?" Redirects from a home-screen app are unreliable | "Why not Cognito's hosted sign-in page (Managed Login)?" Since iOS 12.2 plain redirects usually return to the app, but popups and some IdP flows still go to Safari, every redirect drops in-memory state, and the hosted form receives the password, which SRP avoids |
-| Token table, refresh row (line 88) | 30 days | 90 days |
-| Paragraph under the table (line 91) | 30 days | 90 days |
-| Rotation paragraph (lines 122 to 124) | "does not extend the 30 days ... every 30 days" | 90 days, both places |
-| "What is still exposed" (line 139) | 30-day credential | 90-day credential |
-| Decision table, refresh-token row (line 422) | 30-day credential | 90-day credential |
-| Closing summary (line 515) | 30-day token | 90-day token |
-
-### Where this lands in code (not built yet)
-
-The doc describes parts of the flow that don't exist in the code yet:
-
-- **The refresh-token lifetime** is a Cognito app-client setting
-  (`RefreshTokenValidity`). It will live in `backend/template.yaml`
-  (phase 2). No Python code reads it. The cookie's `Max-Age` should match it
-  when the auth routes are written.
-- **`POST /v1/auth/session`, `/v1/auth/refresh` and `/v1/auth/signout`** are
-  documented as ApiFunction routes, but `api_app.py` has none of them. Today
-  a request to them falls through to FastAPI's 404, which `errors.py` maps
-  to `not_found`. When they're added, they will be the only routes that
-  start from the cookie rather than from `current_user` and the JWT claims.
-  They will need their own `Origin` check, as section 2 of the architecture
-  doc describes.
-- **The sign-in form** (SRP through `amazon-cognito-identity-js`) is frontend
-  (phase 3). `web/` holds only the catalog copy so far.
-
-### Left out of this edit
-
-- The decision table row at line 421 still reads "Redirects are unreliable
-  from a home-screen app". The rewritten paragraph now says they usually
-  work, so the two disagree. The table row should name the reasons the new
-  paragraph gives (lost in-memory state, popup/IdP hand-off, password sent
-  to the hosted form).
-- `docs/code-map.md` doesn't list the three `/v1/auth/*` routes, either
-  under `api_app.py` or in "Not built yet".
+Not built yet: the `in_progress` claim flow for `/v1/assistant` (phase 6), and
+the AWS side (`template.yaml`, phase 2b), which sets `COGNITO_CLIENT_ID`,
+`APP_ORIGIN` and `REFRESH_TOKEN_DAYS`.
 
 ---
 
 ## 8. Loose ends noticed while tracing
 
-None of these is a bug in the changes above. They are places where the code
-doesn't behave the way a comment or a sibling suggests.
+None of these is a bug. They are places where the code doesn't behave the
+way a comment or a sibling suggests.
 
-- **The OpenAI SDK import isn't as lazy as its docstring says.**
-  `get_summarizer` is a `Depends`, so it runs before `finish_day`'s body. The
-  SDK is imported on every finish request that passes date and auth checks,
-  including requests that then return 400, 409, 403 or 429. To get the
-  intended saving, call `get_summarizer()` inside `finish_day` after
-  `guard_ai`, and keep the dependency only as the test seam.
-- **The usage count isn't given back when the model call fails.**
-  `guard_ai` bumps it before the call, and `release_usage` is never called.
-  A 502 or 402 from OpenAI still uses up one of the day's calls.
-- **Two different rules decide when a day is "empty".** `service._prune`
-  keeps a day that has `summaryGeneratedAt`. `repo.move_exercise` checks only
-  `summary`, `notes` and `bodyweight`. Moving the last exercise off a
-  summarized day whose summary was later cleared deletes the day, and the
-  run-once marker goes with it.
-- **A crafted cursor returns 500, not 400.** `_decode_cursor` accepts any
-  JSON, and its `PK` is never checked against the caller. DynamoDB rejects a
-  start key from another partition, so no data leaks, but the `ClientError`
-  becomes a 500 `internal_error`. Checking `start["PK"] == pk(sub)` in
-  `list_days` would turn it into `bad_cursor`.
-- **A 304 can come back just after a write.** `data_version` reads with
-  `ConsistentRead=False`. A poll right after a write can see the old
-  `dataVersion` and answer 304 with stale data until the next poll.
 - **`FinishIn.timezone` is accepted and ignored.** The daily AI window is
   always the UTC day.
 - **`service.remove_exercise` keeps the removed exercise in `seen` and never
   reads it**, presumably for the phase 6 undo.
+- **A failed "sign out everywhere" leaves this device's cookie in place.**
+  If Cognito rejects the access token, `/signout` returns 401 before
+  revoking the local refresh token. The app should refresh and try again.

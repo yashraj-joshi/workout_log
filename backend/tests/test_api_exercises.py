@@ -100,6 +100,24 @@ def test_move_to_an_empty_date_creates_it(api):
     assert day["date"] == "2026-09-26" and day["exercises"]["01"]["order"] == 1
 
 
+def test_move_keeps_a_summarized_day_whose_summary_was_cleared(api, assistant, repo):
+    """Moving the last exercise off a day must use the same "worth keeping"
+    rule as every other write, or the run-once marker goes with the day."""
+    client = api()
+    client.post("/v1/days/2026-09-25/exercises",
+                json={"exercise": "Plank", "sets": [{"seconds": 30}]})
+    assert assistant().post("/v1/days/2026-09-25/finish").status_code == 200
+    client.patch("/v1/days/2026-09-25", json={"summary": None})
+
+    moved = client.post("/v1/days/2026-09-25/exercises/01/move",
+                        json={"toDate": "2026-09-26"})
+    assert moved.status_code == 200
+
+    source = repo.get_day("user-1", "2026-09-25")
+    assert source is not None and source["summaryGeneratedAt"]
+    assert assistant().post("/v1/days/2026-09-25/finish").status_code == 400  # nothing to summarize, not re-opened
+
+
 def test_move_to_the_same_date_is_rejected(api):
     client = api()
     client.post("/v1/days/2026-09-25/exercises", json=ROW)

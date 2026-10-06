@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+import base64
+import json
+
+import pytest
+
 
 def test_health_needs_no_auth(api):
     body = api().get("/health").json()
@@ -59,6 +64,19 @@ def test_paging_returns_a_cursor(api):
 
 def test_bad_cursor_is_rejected(api):
     response = api().get("/v1/days", params={"cursor": "not-base64!!"})
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "bad_cursor"
+
+
+@pytest.mark.parametrize("start", [
+    {"PK": "USER#user-2", "SK": "DAY#2026-09-01"},      # someone else's partition
+    {"PK": "USER#user-1", "SK": "PROFILE"},             # not a day item
+    {"PK": "USER#user-1"},                              # wrong shape
+    ["USER#user-1", "DAY#2026-09-01"],                  # not an object
+])
+def test_a_crafted_cursor_is_400_not_500(api, start):
+    cursor = base64.urlsafe_b64encode(json.dumps(start).encode()).decode().rstrip("=")
+    response = api().get("/v1/days", params={"cursor": cursor})
     assert response.status_code == 400
     assert response.json()["error"]["code"] == "bad_cursor"
 
