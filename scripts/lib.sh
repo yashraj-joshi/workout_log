@@ -19,9 +19,10 @@ stack_exists() {
 
 # stack_output AppUrl -> the value, or empty if the stack or output is missing.
 stack_output() {
-  aws_ cloudformation describe-stacks --stack-name "$STACK_NAME" \
-    --query "Stacks[0].Outputs[?OutputKey=='$1'].OutputValue" --output text 2>/dev/null \
-    | sed 's/^None$//'
+  # `|| true` so a missing stack stays empty under `set -o pipefail`.
+  { aws_ cloudformation describe-stacks --stack-name "$STACK_NAME" \
+      --query "Stacks[0].Outputs[?OutputKey=='$1'].OutputValue" --output text 2>/dev/null \
+      || true; } | sed 's/^None$//'
 }
 
 require_stack() {

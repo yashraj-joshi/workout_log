@@ -40,7 +40,7 @@ deploy() {
     --no-fail-on-empty-changeset \
     --parameter-overrides \
       "GitCommit=$COMMIT" \
-      "AppOrigin=$1" \
+      ${1:+"AppOrigin=$1"} \
       ${DAILY_AI_LIMIT:+"DailyAiLimit=$DAILY_AI_LIMIT"})
 }
 
