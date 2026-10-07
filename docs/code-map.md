@@ -40,6 +40,9 @@ assistant_app.finish_day
   -> repo.set_summary_once     conditional write, so it happens once per day
 ```
 
+For *why* a given thing is the way it is, rather than what it does, see
+[decisions.md](decisions.md).
+
 ## 2. If you know ASP.NET
 
 | Here | Closest .NET idea |

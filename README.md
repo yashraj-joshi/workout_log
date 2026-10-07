@@ -127,7 +127,9 @@ Follow the docs in this order:
 
 [docs/00-architecture.md](docs/00-architecture.md) explains why each piece was
 chosen. Read it when you want the reasoning rather than the steps.
-[docs/code-map.md](docs/code-map.md) says what each file does.
+[docs/code-map.md](docs/code-map.md) says what each file does, and
+[docs/decisions.md](docs/decisions.md) says why each judgement call went the
+way it did, and what the other options were.
 
 ## Running the tests now
 
