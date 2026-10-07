@@ -20,10 +20,10 @@ Invited you@example.com. Cognito has emailed them a temporary password (valid 7 
 To let them use voice and summaries: scripts/set-ai-access.sh you@example.com on
 ```
 
-They sign in with the temporary password and choose their own. The password
-needs at least 12 characters, with upper case, lower case and a number. The
-sign-in screen arrives in phase 3; until then the account exists but there is
-nowhere to use it.
+They open the app (doc 06), sign in with the temporary password, and choose
+their own. The password needs at least 12 characters, with upper case, lower
+case and a number. The temporary password works for 7 days; after that, invite
+them again with `--message-action RESEND` (see "Common errors").
 
 Cognito sends these emails from its own address, with a limit of 50 a day.
 That is plenty for an invite-only app.

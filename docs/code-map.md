@@ -4,8 +4,8 @@ What each file does, and where to look when you want to change or debug
 something. For why the pieces were chosen, read
 [00-architecture.md](00-architecture.md).
 
-This covers what exists after phase 2. Files that later phases add are listed
-in [section 9](#9-not-built-yet).
+This covers what exists after phase 3. Files that later phases add are listed
+in [section 10](#10-not-built-yet).
 
 ---
 
@@ -283,9 +283,47 @@ file. It exists so both versions can be checked against
 
 ---
 
-## 4. Tests
+## 4. Web files
 
-All under `backend/tests/`. Run them with `make test-py`.
+All under `web/`. Static files, no build step: what's in the repo is what the
+browser runs. `deploy-web.sh` uploads them (docs/06).
+
+### How the app starts
+
+1. `index.html` loads `config.js` (the Cognito IDs) and `js/app.js`.
+2. `app.js` asks `session.refresh()` to turn the refresh cookie into tokens.
+   - 401: no session. Show the sign-in screen (`views/signin.js`).
+   - No reply: open the saved copy of the log (`store.js`), read-only.
+3. Signed in: `GET /v1/me` for the groups, then `sync.refresh()` loads the log,
+   and again every 60 s while the app is visible.
+
+### The files
+
+| File | What it does | Look here when |
+| --- | --- | --- |
+| `index.html` | The page: header, status line, tabs, panels. No inline script or style (the CSP forbids both) | Changing the layout of the shell |
+| `css/app.css` | Color tokens (light and dark), fonts, layout breakpoints (600px, 960px), components | Anything visual |
+| `js/app.js` | Startup, signed-in vs signed-out screens, status line, tabs, account menu, polling, pull-to-refresh, service-worker registration | The app shows the wrong screen, or doesn't refresh |
+| `js/session.js` | Access and ID tokens, in memory only. `adopt` (after sign-in), `refresh` (one at a time), `signOut` | 401 loops, sign-out, "Your session ended" |
+| `js/api.js` | Every API call: 10 s deadline, one refresh-and-retry on 401, write retries, `Idempotency-Key`, the error shape | Timeouts, retries, error messages from the API |
+| `js/sync.js` | Loads the whole log with the ETag; 304 when nothing changed | The log doesn't update, or updates too often |
+| `js/store.js` | The offline copy of the log in `localStorage`, per user. The only file that touches browser storage | Offline start, a second person on the same device |
+| `js/cognito.js` | SRP sign-in, first password, forgot password, via the vendored library. Turns Cognito errors into plain messages | Sign-in errors |
+| `js/views/signin.js` | The sign-in screen and its three side steps | The sign-in forms |
+| `js/dom.js` | `h()` builds elements with text nodes only, so user text can't become markup. `toast()` | Rendering helpers |
+| `sw.js` | Caches the app shell; never `/v1/*` or `/health`. `VERSION` is stamped with the commit at deploy | A stale app after a deploy |
+| `manifest.webmanifest` | Name, icons, `display: standalone` | Home-screen name or icon |
+| `config.example.js` | The shape of `config.js`, which `make web-config` writes and git ignores | `config.js` missing |
+| `vendor/` | `amazon-cognito-identity-js` 6.3.20, pinned, with its license. Loaded only when someone signs in | Upgrading the library: replace the file, update the name in `cognito.js` and `sw.js` |
+| `fonts/` | Barlow and Barlow Condensed (latin, woff2) with their OFL licenses | |
+| `icons/` | Drawn by `scripts/make-icons.py` (`make icons`) | |
+| `exercise_catalog.json` | Copy of `shared/exercise_catalog.json` (`make sync-shared`). Used from phase 4 | |
+
+## 5. Tests
+
+Backend tests are under `backend/tests/` (`make test-py`). Frontend tests are
+under `web/tests/` (`make test-js`), run by Node's built-in runner with no
+dependencies.
 
 | File | What it proves |
 | --- | --- |
@@ -301,11 +339,16 @@ All under `backend/tests/`. Run them with `make test-py`.
 | `test_repo.py` | Locking and retries, the ETag counter, atomic moves, numbers round-tripping, the usage counter |
 | `test_shared_fixtures.py` | Runs the golden cases in `shared/fixtures/` against `logic.py` and `export_csv.py` |
 | `test_template.py` | `template.yaml` matches the code: every route deployed on the right function, only three routes skip the authorizer, `ApiFunction` can't read the key, token settings, retained table and pool, private bucket, strict CSP |
+| `web/tests/api.test.js` | The 10 s deadline, refresh-and-retry on 401 (once), which writes retry and how often, the same `Idempotency-Key` on every retry, a retried DELETE's 404 counted as done |
+| `web/tests/session.test.js` | Sign-in hands the refresh token to the server and keeps only access and ID tokens; parallel refreshes share one call; a 401 signs out; sign-out keeps the session if the server didn't answer |
+| `web/tests/sync.test.js` | ETag and 304, paging, offline keeps the saved copy |
+| `web/tests/store.test.js` | A different person signing in wipes the last one's data; broken storage doesn't break the app |
+| `web/tests/shell.test.js` | The service worker caches every app file; no inline script, style or handler; no `innerHTML` or `eval`; only `store.js` touches storage |
 
 `pytest.ini` puts `src` on the import path and turns deprecation warnings from
 our own code into failures.
 
-## 5. Shared data
+## 6. Shared data
 
 `shared/` holds data that both the backend and the frontend use.
 
@@ -318,27 +361,29 @@ our own code into failures.
   `format_cases.json`, and `export_days.json` with `export_expected.csv`.
   pytest runs them now; `node --test` will run the same files from phase 4.
 
-## 6. Everything else
+## 7. Everything else
 
 | Path | What it is |
 | --- | --- |
-| `Makefile` | `venv`, `sync-shared`, `test`, `check-secrets`, `lint-template`, `build`, `deploy`, `smoke`, `serve`, `clean`. Run `make help` |
+| `Makefile` | `venv`, `sync-shared`, `test`, `check-secrets`, `lint-template`, `build`, `deploy`, `web-config`, `deploy-web`, `icons`, `smoke`, `serve`, `clean`. Run `make help` |
 | `backend/template.yaml` | The whole AWS stack: table, Cognito, HTTP API, both functions, bucket, CloudFront. `test_template.py` guards it |
 | `backend/src/requirements.txt` | Runtime dependencies, pinned exactly. Inside `src/` because SAM packages that folder |
 | `backend/requirements-dev.txt` | Adds pytest, moto, httpx, PyYAML and cfn-lint. Never packaged |
 | `scripts/lib.sh` | Shared by the scripts: stack name, region, reading stack outputs |
 | `scripts/deploy-backend.sh` | `make deploy`: committed code only, tests, build, deploy, and the second pass that sets `AppOrigin` |
+| `scripts/write-web-config.sh` | `make web-config`: writes `web/config.js` (region, user pool ID, app client ID) from the stack outputs |
+| `scripts/deploy-web.sh` | `make deploy-web`: committed code only, tests, a staged copy with `config.js` and the stamped `sw.js`, `s3 sync` with cache headers, CloudFront invalidation |
+| `scripts/make-icons.py` | `make icons`: draws the app icons with the standard library |
 | `scripts/smoke-test.sh` | `make smoke`: checks the live stack from outside without an account |
 | `scripts/put-openai-key.sh` | Stores the OpenAI key in SSM without it touching history or argv |
 | `scripts/create-user.sh`, `set-ai-access.sh` | Invite a user; turn AI on or off for them |
 | `scripts/check-secrets.sh` | Fails if a key-shaped string is in a tracked file, or if `web/` mentions OpenAI |
 | `docs/00-architecture.md` | Why each piece was chosen |
-| `docs/01` to `05` | Tools, AWS account, OpenAI key, deploy, users |
-| `web/` | Only the catalog copy so far |
+| `docs/01` to `06` | Tools, AWS account, OpenAI key, deploy, users, web app and install |
 
 ---
 
-## 7. Where to look when...
+## 8. Where to look when...
 
 | You see or want | Start in |
 | --- | --- |
@@ -363,8 +408,12 @@ our own code into failures.
 | Summary states a wrong number | `summary.py` |
 | Summary's tone or length | `assistant/prompts.py` |
 | How data is laid out in DynamoDB | The docstring at the top of `repo.py` |
+| The app opens on sign-in every time | `web/js/session.js` `refresh`; the cookie routes in `sessions.py`; doc 06 "Common errors" |
+| A sign-in error message | `web/js/cognito.js` `friendly` |
+| The app still shows the old version after a deploy | `web/sw.js` (`VERSION`, the activate step), `registerServiceWorker` in `web/js/app.js` |
+| A CSP error in the browser console | The `SecurityHeaders` policy in `template.yaml`; `web/tests/shell.test.js` |
 
-## 8. Settings
+## 9. Settings
 
 Every setting is an environment variable with a default. `backend/template.yaml`
 sets them on the deployed functions; template parameters (`GitCommit`,
@@ -385,18 +434,17 @@ them, and `deploy-backend.sh` passes the first two.
 | `ASSISTANT_MODEL` | `gpt-6-luna` | `assistant/summarizer.py` | Model used for the summary |
 | `SUMMARY_MAX_TOKENS` | `400` | `assistant/summarizer.py` | Output token cap |
 
-## 9. Not built yet
+## 10. Not built yet
 
 Other files already mention these paths, so here is when each arrives.
 
 | Path | Phase |
 | --- | --- |
-| `web/index.html`, CSS, sign-in, PWA files | 3 |
-| `web/js/logic.js`, `web/tests/*.test.js` | 4 |
+| `web/js/logic.js`, `web/js/views/day.js`, the logic fixture tests | 4 |
 | `web/js/csv.js` | 5 |
 | `/v1/assistant`, `/v1/assistant/undo` | 6 |
 | Import of the old log | 7 |
-| `docs/06` to `docs/09` | As each phase lands |
+| `docs/07` to `docs/09` | As each phase lands |
 
 ---
 

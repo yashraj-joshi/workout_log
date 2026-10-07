@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Workout Log</title>
+  <meta name="description" content="A workout log you can talk to.">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#EEF0EC" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#101214" media="(prefers-color-scheme: dark)">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Workout Log">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+  <link rel="preload" href="/fonts/barlow-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/fonts/barlow-condensed-latin-700-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/css/app.css">
+  <!-- No inline script anywhere: the CSP allows script-src 'self' only. -->
+  <script src="/config.js" defer></script>
+  <script type="module" src="/js/app.js"></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <p class="ptr" id="ptr" aria-hidden="true" hidden>Pull to refresh</p>
+
+  <header class="top wrap">
+    <p class="status" id="status" data-state="connecting" hidden>
+      <span class="dot" aria-hidden="true"></span><span id="status-text" role="status">Connecting…</span>
+    </p>
+    <div class="top-row">
+      <h1 class="title">Workout Log</h1>
+      <div class="top-actions" id="top-actions" hidden>
+        <button class="btn only-pointer" id="refresh" type="button">Refresh</button>
+        <div class="menu">
+          <button class="btn" id="account-btn" type="button" aria-haspopup="true" aria-expanded="false"
+                  aria-controls="account-menu">Account</button>
+          <div class="menu-panel card" id="account-menu" hidden>
+            <p class="menu-email" id="account-email"></p>
+            <p class="meta" id="account-ai"></p>
+            <button class="btn block" id="signout" type="button">Sign out</button>
+            <button class="btn danger block" id="signout-all" type="button">Sign out everywhere</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <nav class="seg tabs" id="tabs" role="tablist" aria-label="Views" hidden>
+      <button type="button" role="tab" id="tab-day" data-tab="day" aria-controls="panel-day">Day</button>
+      <button type="button" role="tab" id="tab-trends" data-tab="trends" aria-controls="panel-trends">Trends</button>
+      <button type="button" role="tab" id="tab-progress" data-tab="progress" aria-controls="panel-progress">Progress</button>
+    </nav>
+  </header>
+
+  <main class="wrap" id="main">
+    <section id="signin" class="signin-wrap" hidden></section>
+
+    <div id="app-body" hidden>
+      <section class="panel" id="panel-day" role="tabpanel" aria-labelledby="tab-day" tabindex="0">
+        <div class="card">
+          <h2 class="section-title">Your log</h2>
+          <div id="log-summary"></div>
+        </div>
+        <p class="meta coming">The calendar, exercises and day summary arrive with the Day tab.</p>
+      </section>
+      <section class="panel" id="panel-trends" role="tabpanel" aria-labelledby="tab-trends" tabindex="0" hidden>
+        <div class="card">
+          <h2 class="section-title">Trends</h2>
+          <p class="meta">Workouts per week, the heatmap and sets per muscle arrive here.</p>
+        </div>
+      </section>
+      <section class="panel" id="panel-progress" role="tabpanel" aria-labelledby="tab-progress" tabindex="0" hidden>
+        <div class="card">
+          <h2 class="section-title">Progress</h2>
+          <p class="meta">Per-exercise history and the top-set chart arrive here.</p>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+</body>
+</html>

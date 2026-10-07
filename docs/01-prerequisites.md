@@ -175,10 +175,10 @@ Expected: `v22.x.x` or newer. Node 18+ is enough for the built-in test runner.
 **Check it worked:**
 
 ```bash
-node --test web/tests/ 2>&1 | tail -3
+make test-js 2>&1 | grep -E '^ℹ (pass|fail)'
 ```
 
-Until phase 4 there are no frontend tests yet, so an empty result is correct.
+Expected: a `pass` count and `fail 0`.
 
 ---
 

@@ -290,7 +290,7 @@ kbd { font: 500 12px var(--mono); border: 1px solid var(--line); border-bottom-w
           <li><b>Python modules</b> shows the same flows inside <code>backend/src/workoutlog/</code>.</li>
           <li>Flows marked with a dashed dot are designed but not in the code yet.</li>
         </ul>
-        <p style="color:var(--muted);font-size:13.5px">Built today: the Python backend and the AWS stack that runs it (<code>backend/template.yaml</code>). The web app and its sign-in screen arrive in phase 3, the voice assistant in phase 6.</p>
+        <p style="color:var(--muted);font-size:13.5px">Built today: the Python backend, the AWS stack that runs it (<code>backend/template.yaml</code>), and the web app shell with sign-in, sync and offline start (<code>web/</code>). The Day tab arrives in phase 4, the voice assistant in phase 6.</p>
       </section>
 
       <section class="card" id="flowCard" hidden>
@@ -327,15 +327,15 @@ kbd { font: 500 12px var(--mono); border: 1px solid var(--line); border-bottom-w
   const VIEWS = {
     system: {
       viewBox: [0, 0, 1320, 700],
-      caption: "Solid boxes exist in the repo: the Python code, or a resource in backend/template.yaml. Dashed ones are designed in 00-architecture.md and arrive with the web app (phase 3).",
+      caption: "Solid boxes exist in the repo: the Python code, the web app, or a resource in backend/template.yaml. Dashed ones are designed in 00-architecture.md and not built yet.",
       zones: [
         { x: 16, y: 40, w: 212, h: 648, label: "Phone" },
         { x: 246, y: 40, w: 1058, h: 548, label: "AWS · one SAM stack" },
         { x: 1060, y: 598, w: 244, h: 90, label: "Outside AWS" }
       ],
       nodes: [
-        N("browser", 34, 300, 176, 84, "Workout Log app", "PWA on iPhone", "designed"),
-        N("sw", 34, 452, 176, 64, "Service worker", "shell cache · never /v1/*", "designed"),
+        N("browser", 34, 300, 176, 84, "Workout Log app", "PWA on iPhone", "repo"),
+        N("sw", 34, 452, 176, 64, "Service worker", "shell cache · never /v1/*", "repo"),
         N("cognito", 276, 92, 184, 76, "Cognito user pool", "SRP sign-in · groups", "repo"),
         N("cloudfront", 276, 300, 184, 84, "CloudFront", "one origin · no CORS", "repo"),
         N("s3", 276, 452, 184, 76, "S3 bucket", "private · OAC", "repo"),
@@ -353,9 +353,9 @@ kbd { font: 500 12px var(--mono); border: 1px solid var(--line); border-bottom-w
         N("openai", 1080, 618, 216, 64, "OpenAI", "Responses API · store=false", "ext")
       ],
       edges: [
-        E("s_br_cf", "browser", "cloudfront", [[210, 342], [276, 342]], "HTTPS", 243, 334, "middle", "designed"),
-        E("s_br_cog", "browser", "cognito", [[122, 300], [122, 130], [276, 130]], "SRP sign-in", 200, 122, "middle", "designed"),
-        E("s_br_sw", "browser", "sw", [[122, 384], [122, 452]], "offline shell", 130, 422, "start", "designed"),
+        E("s_br_cf", "browser", "cloudfront", [[210, 342], [276, 342]], "HTTPS", 243, 334, "middle"),
+        E("s_br_cog", "browser", "cognito", [[122, 300], [122, 130], [276, 130]], "SRP sign-in", 200, 122, "middle"),
+        E("s_br_sw", "browser", "sw", [[122, 384], [122, 452]], "offline shell", 130, 422, "start"),
         E("s_cf_s3", "cloudfront", "s3", [[368, 384], [368, 452]], "/ · /js/* · /css/*", 376, 422, "start", "repo"),
         E("s_cf_gw", "cloudfront", "apigw", [[460, 342], [516, 342]], "/v1/*", 488, 334, "middle", "repo"),
         E("s_gw_cog", "apigw", "cognito", [[608, 300], [608, 148], [460, 148]], "JWKS: verify JWT", 616, 228, "start", "repo"),
@@ -430,11 +430,11 @@ kbd { font: 500 12px var(--mono); border: 1px solid var(--line); border-bottom-w
 
   const DETAILS = {
     // ---- system view
-    browser: { kind: "Frontend · PWA", status: "Designed · phase 3", files: ["web/ (only exercise_catalog.json so far)"],
+    browser: { kind: "Frontend · PWA", status: "In the repo · make deploy-web", files: ["web/js/app.js", "web/js/session.js", "web/js/api.js", "web/js/sync.js", "web/js/views/signin.js"],
       body: ["Static HTML, CSS and plain ES modules, added to the iPhone home screen. No build step.",
              "Access and ID tokens live in memory only. The refresh token sits in an httpOnly cookie the page's JavaScript can't read."],
       facts: [["Polls", "GET /v1/days every 60 s with If-None-Match"], ["Sign-in", "SRP through a vendored, pinned amazon-cognito-identity-js"]] },
-    sw: { kind: "Frontend", status: "Designed · phase 3",
+    sw: { kind: "Frontend", status: "In the repo", files: ["web/sw.js"],
       body: ["Caches the app shell so it opens instantly, online or not. It never caches /v1/*, so data always comes from the server."] },
     cognito: { kind: "AWS · identity", status: "In template.yaml · make deploy", files: ["backend/template.yaml · UserPool, UserPoolClient", "scripts/create-user.sh", "scripts/set-ai-access.sh"],
       body: ["Invite-only user pool. SRP sign-in means the password is never sent at sign-in.",
@@ -445,9 +445,9 @@ kbd { font: 500 12px var(--mono); border: 1px solid var(--line); border-bottom-w
              "API paths use CachingDisabled and AllViewerExceptHostHeader, which is what lets the Authorization, Cookie, Origin and Idempotency-Key headers reach API Gateway.",
              "A response headers policy adds the CSP (script-src 'self'), HSTS, nosniff, a referrer policy and a permissions policy."],
       facts: [["/, /js/*, /css/*", "S3"], ["/health", "ApiFunction, no auth"], ["/v1/auth/*", "ApiFunction, refresh cookie"], ["other /v1/*", "JWT, either function"]] },
-    s3: { kind: "AWS · storage", status: "In template.yaml · empty until phase 3", files: ["backend/template.yaml · WebBucket, WebBucketPolicy"],
+    s3: { kind: "AWS · storage", status: "In template.yaml · make deploy-web", files: ["backend/template.yaml · WebBucket, WebBucketPolicy"],
       body: ["Private bucket with all public access blocked. Only this CloudFront distribution can read it, through Origin Access Control, and only over TLS."],
-      facts: [["Filled by", "deploy-web.sh (phase 3)"]] },
+      facts: [["Filled by", "deploy-web.sh"]] },
     apigw: { kind: "AWS · API", status: "In template.yaml · make deploy", files: ["backend/template.yaml · HttpApi", "tests/test_template.py"],
       body: ["HTTP API with a built-in JWT authorizer, so a bad token is turned away before any Lambda runs.",
              "It checks signature and expiry, not revocation. That is why access tokens last 15 minutes."],

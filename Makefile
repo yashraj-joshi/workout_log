@@ -6,7 +6,7 @@ PIP     := $(VENV)/bin/pip
 SHARED  := shared/exercise_catalog.json
 COPIES  := backend/src/workoutlog/exercise_catalog.json web/exercise_catalog.json
 
-.PHONY: help venv sync-shared test test-py test-js check-secrets lint-template build deploy smoke serve clean
+.PHONY: help venv sync-shared test test-py test-js check-secrets lint-template build deploy web-config deploy-web icons smoke serve clean
 
 help:
 	@grep -E '^[a-z-]+:.*?## ' $(MAKEFILE_LIST) | sed 's/:.*## /\t/' | expand -t22
@@ -26,11 +26,7 @@ test-py: ## Backend tests (pytest + moto)
 	cd backend && ../$(PY) -m pytest -q
 
 test-js: ## Frontend tests (node --test, no dependencies)
-	@if [ -d web/tests ] && ls web/tests/*.test.js >/dev/null 2>&1; then \
-		node --test web/tests/; \
-	else \
-		echo "  no frontend tests yet (phase 4)"; \
-	fi
+	node --test web/tests/*.test.js
 
 check-secrets: ## Fail if a key-shaped string is in the repo. Run before committing.
 	./scripts/check-secrets.sh
@@ -44,6 +40,15 @@ build: lint-template ## sam build into backend/.aws-sam
 
 deploy: ## Test, build and deploy the backend stack (needs AWS sign-in, docs/04)
 	./scripts/deploy-backend.sh
+
+web-config: ## Write web/config.js from the stack outputs (for make serve)
+	./scripts/write-web-config.sh
+
+deploy-web: ## Test, then upload web/ to S3 and clear CloudFront's cache (docs/06)
+	./scripts/deploy-web.sh
+
+icons: ## Redraw web/icons/ (standard-library Python, no venv needed)
+	python3 scripts/make-icons.py
 
 smoke: ## Check the deployed stack from outside, through CloudFront
 	./scripts/smoke-test.sh
