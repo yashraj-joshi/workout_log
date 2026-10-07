@@ -25,6 +25,7 @@ from . import errors, service
 from .assistant import tools
 from .auth import User, current_user, git_commit, require_ai
 from .errors import ApiError
+from .idempotency import Claim, idempotency_key, replay, request_hash
 from .models import AssistantIn, FinishIn, UndoIn, valid_date
 from .repo import Repo, public_day
 
@@ -149,11 +150,13 @@ def _known_names(days: list[dict], limit: int = 60) -> list[str]:
 @app.post("/v1/assistant")
 def assistant(
     body: AssistantIn,
+    request: Request,
     user: User = Depends(current_user),
     repo: Repo = Depends(get_repo),
     transcriber=Depends(get_transcriber),
     agent=Depends(get_agent),
     summarizer=Depends(get_summarizer),
+    key: str | None = Depends(idempotency_key),
 ):
     """One turn: hear it, decide what it means, write it, say what was written.
 
@@ -163,9 +166,23 @@ def assistant(
     """
     guard_ai(repo, user)
 
+    # This route makes several writes and two paid calls, so it cannot put the
+    # key in one transaction the way the REST writes do. It claims the key
+    # first and marks it done at the end; a retry of a turn that already ran
+    # replays the answer instead of logging it twice.
+    expected = request_hash(request, body) if key else None
+    claim = Claim(repo, user.sub, key, expected)
+    if claim.taken:
+        repo.release_usage(user.sub, utc_today())
+        return replay(claim.taken, expected)
+
     history = repo.list_days(user.sub, limit=500)["days"]
     names = _known_names(history)
     audio_seconds = 0.0
+    # Declared before the try so the failure path can ask whether anything was
+    # written, even when the failure came before the session existed.
+    session = tools.Session(repo, user.sub, body.today,
+                            finisher=lambda date, notes: _finish(repo, user, date, notes, summarizer))
 
     try:
         if body.audioBase64:
@@ -186,16 +203,21 @@ def assistant(
         turns = repo.recent_turns(user.sub, body.date, limit=3)
         # finish_day goes through the same run-once path as the button, which
         # is why the summarizer is handed down rather than reimplemented.
-        session = tools.Session(repo, user.sub, body.today,
-                                finisher=lambda date, notes: _finish(repo, user, date, notes, summarizer))
         context = _context(today=body.today, timezone=body.timezone, date=body.date,
                            day=day, known_names=names, turns=turns)
         result = agent(session=session, context=context, said=transcript)
-    except ApiError:
-        # Nothing was written, or the writes stand on their own; either way the
-        # turn did not finish, so it should not cost one of the day's calls.
+    except ApiError as exc:
         repo.release_usage(user.sub, utc_today())
-        raise
+        # Nothing was written: give the key back so a retry runs fresh.
+        if not session.changed:
+            claim.release()
+            raise
+        # Some of it was logged before this went wrong. Saying "nothing was
+        # logged" would be untrue, and leaving the key claimed would make the
+        # app retry something that already half-happened. So the turn ends
+        # here, with what was done and a way to undo it.
+        result = {"reply": exc.message, "assumptions": [], "question": None,
+                  "modelCalls": 0, "inputTokens": 0, "outputTokens": 0}
 
     snapshots = session.snapshots()
     token = repo.put_turn(user.sub, {
@@ -209,7 +231,7 @@ def assistant(
 
     _record_cost("assistant", result, audio_seconds)
 
-    return {
+    answer = {
         "transcript": transcript,
         "reply": result["reply"],
         "assumptions": result.get("assumptions") or [],
@@ -219,6 +241,8 @@ def assistant(
                  else {"date": d, "deleted": True} for d in session.changed],
         "undoToken": token if snapshots else None,
     }
+    claim.finish(answer)
+    return answer
 
 
 def _context(**kwargs) -> str:

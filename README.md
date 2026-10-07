@@ -7,10 +7,9 @@ It replaces a Claude artifact of the same name with a real app: the same
 screens and rules, but the data lives in your own AWS account, the app installs
 to an iPhone home screen, and the assistant runs on your own OpenAI key.
 
-**Status:** phase 6 of 7 complete. Everything works: sign-in, the Day tab,
-Trends, Progress, Export CSV, voice logging and "Done for today". Phase 7 is
-the importer for the old log and the last three docs. See
-[Build phases](#build-phases).
+**Status:** all 7 phases complete. Sign-in, the Day tab, Trends, Progress,
+Export CSV, voice logging, "Done for today", and an importer for the old log.
+Follow the docs in order to deploy it. See [Build phases](#build-phases).
 
 ---
 
@@ -80,6 +79,7 @@ backend/
     auth.py                 JWT claims -> User
     sessions.py             the refresh-token cookie: /v1/auth/*
     errors.py               the {"error": {...}} envelope
+    idempotency.py          a write runs at most once per Idempotency-Key
     api_app.py              ApiFunction  (no OpenAI access)
     assistant_app.py        AssistantFunction (the only OpenAI caller)
     summary.py              facts for "Done for today", computed in code
@@ -102,6 +102,7 @@ web/                        static app: no build step, no runtime npm deps
   vendor/                   amazon-cognito-identity-js, pinned
   tests/                    node --test, no dependencies
 scripts/                    deploy, users, keys, smoke test, secret scan
+  import_legacy.py          brings the old log in, from JSON or the old CSV
 docs/                       follow these in order
 ```
 
@@ -140,7 +141,7 @@ make check-secrets
 `make test` runs the backend tests, then the frontend tests.
 Run `make check-secrets` before every commit.
 
-Expected: `247 passed` for the backend, `# fail 0` for the frontend, then
+Expected: `275 passed` for the backend, `# fail 0` for the frontend, then
 `check-secrets: OK`.
 
 To deploy, follow docs 02 to 06; the short version is `make deploy`,
@@ -156,4 +157,4 @@ To deploy, follow docs 02 to 06; the short version is `make deploy`,
 | 4 | Day tab | **done** |
 | 5 | Trends, Progress, Export CSV | **done** |
 | 6 | AI: assistant, voice UI, Done for today | **done** |
-| 7 | Migration, docs, parity checklist | next |
+| 7 | Migration, docs, parity checklist | **done** |

@@ -53,7 +53,11 @@ export function createVoice({ host, api, actions, getDate, getToday }) {
   let meter = null;
   let ticker = null;
   let seconds = 0;
+  // The turn waiting to be sent, and the key that identifies it. The key
+  // stays the same across every retry of the same recording, so a reply lost
+  // on a weak connection cannot turn into a second set in the log.
   let pending = null; // {audioBase64, audioMimeType} or {text}
+  let pendingKey = null;
   let dismissTimer = null;
   let busy = false;
 
@@ -163,6 +167,7 @@ export function createVoice({ host, api, actions, getDate, getToday }) {
     chunks = [];
     if (!blob.size) return hide();
     pending = { audioBase64: await toBase64(blob), audioMimeType: mimeType };
+    pendingKey = newKey();
     deliver();
   }
 
@@ -187,8 +192,9 @@ export function createVoice({ host, api, actions, getDate, getToday }) {
         date: getDate() || getToday(),
         today: getToday(),
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
-      });
+      }, pendingKey);
       pending = null; // it landed; the recording is no longer needed
+      pendingKey = null;
       buzz(20);
       actions.applied(result);
       showResult(result);
@@ -201,8 +207,11 @@ export function createVoice({ host, api, actions, getDate, getToday }) {
 
   function typeInstead(text) {
     pending = { text };
+    pendingKey = newKey();
     deliver();
   }
+
+  const newKey = () => (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()));
 
   // ------------------------------------------------------------- the panel
 
@@ -292,6 +301,19 @@ export function createVoice({ host, api, actions, getDate, getToday }) {
     }
   }
 
+  // Before re-sending a recording, ask whether the server already has it.
+  // A turn that landed and lost its reply is replayed by the key anyway, but
+  // asking first means not paying for the upload again.
+  async function retry() {
+    if (!pending || !pendingKey) return;
+    showWorking("Checking…");
+    const state = await api.requestState(pendingKey);
+    if (state === "in_progress") {
+      return fail({ message: "That one is still going. Give it a moment and try again." });
+    }
+    deliver();
+  }
+
   function fail(err) {
     teardown();
     const retryable = Boolean(pending);
@@ -300,8 +322,8 @@ export function createVoice({ host, api, actions, getDate, getToday }) {
       h("div", { class: "voice-actions" },
         // The recording is still here, so Retry sends it rather than asking
         // for it again.
-        retryable ? h("button", { class: "btn primary", type: "button", onclick: () => deliver() }, "Retry") : null,
-        h("button", { class: "btn", type: "button", onclick: () => { pending = null; hide(); } }, "Dismiss")));
+        retryable ? h("button", { class: "btn primary", type: "button", onclick: () => retry() }, "Retry") : null,
+        h("button", { class: "btn", type: "button", onclick: () => { pending = null; pendingKey = null; hide(); } }, "Dismiss")));
   }
 
   return {

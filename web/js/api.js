@@ -91,10 +91,16 @@ export function createApi({ fetch: fetchImpl, session, sleep = wait, newKey = ()
 
   // idempotent: true makes one key for this action and sends the same key on
   // every retry of it. A new call is a new action and gets a new key.
-  async function request(method, path, { body, etag, idempotent = false, timeoutMs } = {}) {
-    const key = idempotent ? newKey() : null;
+  async function request(method, path, { body, etag, idempotent = false, key: given,
+                                         retry = true, timeoutMs } = {}) {
+    // `idempotent` makes a fresh key for this action; `key` reuses one the
+    // caller is holding across retries of the same action.
+    const key = given || (idempotent ? newKey() : null);
     const safeToRepeat = method === "GET" || method === "PUT" || method === "PATCH" || method === "DELETE";
-    const retries = method !== "GET" && (key || safeToRepeat) ? RETRY_DELAYS_MS.length : 0;
+    // retry: false is for the assistant. Its key makes a repeat safe, but the
+    // first attempt may still be running, and a silent second 30 s wait is
+    // worse than telling you it failed and offering Retry.
+    const retries = retry && method !== "GET" && (key || safeToRepeat) ? RETRY_DELAYS_MS.length : 0;
     for (let attempt = 0; ; attempt++) {
       try {
         return await once(method, path, { body, etag, key, timeoutMs });
@@ -132,10 +138,21 @@ export function createApi({ fetch: fetchImpl, session, sleep = wait, newKey = ()
     moveExercise: (date, key, toDate) =>
       body(request("POST", `${exercise(date, key)}/move`, { body: { toDate }, idempotent: true })),
 
-    // The AI routes. None of them is retried: a repeat could log a second copy
-    // of the same set, and the assistant is not cheap enough to guess with.
-    assistant: (turn) =>
-      body(request("POST", "/v1/assistant", { body: turn, timeoutMs: ASSISTANT_TIMEOUT_MS })),
+    // The AI routes. The assistant is never retried automatically - a repeat
+    // costs money and could log a second copy - but it does carry a key, so a
+    // retry you ask for replays the first answer instead of logging twice.
+    assistant: (turn, key) =>
+      body(request("POST", "/v1/assistant",
+                   { body: turn, key, retry: false, timeoutMs: ASSISTANT_TIMEOUT_MS })),
+    // A few bytes: after a dropped upload, ask whether the server already has
+    // the turn before sending the recording again.
+    requestState: async (key) => {
+      try {
+        return (await request("GET", `/v1/requests/${encodeURIComponent(key)}`)).data.state;
+      } catch (err) {
+        return err.status === 404 ? null : "unknown";
+      }
+    },
     undoAssistant: (undoToken) =>
       body(request("POST", "/v1/assistant/undo", { body: { undoToken } })),
     // Conditional on the server, so a second press gets 409 rather than a

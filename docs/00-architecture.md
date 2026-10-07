@@ -335,6 +335,33 @@ skipped areas, and each exercise's top set against its last session. The model
 only turns that block into two or three sentences. It cannot invent a total,
 because it is never asked to compute one.
 
+**Bounded on purpose.** At most 5 round trips and a 25 s deadline inside the
+function's 29 s and the HTTP API's 30 s. A turn that runs out of either says
+what it already logged, rather than claiming the whole thing failed.
+
+**Three limits, in front of each other.** The `ai-users` group decides who can
+call at all. An atomic per-user daily counter (`DAILY_AI_LIMIT`, default 100)
+caps how often. A prepaid OpenAI account with auto-recharge off is the hard
+ceiling. Only the third one cannot be got round by a bug in the first two.
+
+### Watching what it costs
+
+Every AI call writes one embedded-metric-format line: input and output tokens,
+audio seconds as the transcription API reported them, round trips, and those
+priced into an estimated dollar figure. EMF rather than `PutMetricData` means
+no second API call and no extra IAM permission - CloudWatch reads the metrics
+out of the log line itself. The line carries counts only, never transcripts.
+
+The prices are stack parameters, not constants in the code, so a price change
+is a `sam deploy --parameter-overrides` rather than a new release. The figure
+is an estimate from token counts; [docs/09](09-operations-and-costs.md) says
+how to check it against the real bill.
+
+Four alarms come with the stack: errors on either function, the assistant's
+p95 duration approaching its timeout, and a day's estimated spend passing a
+threshold. Each is a condition that means something is broken or costing
+money, rather than a dashboard to watch.
+
 ## 3. Request flows
 
 ### Opening the app

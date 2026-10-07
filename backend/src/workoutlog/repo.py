@@ -248,6 +248,55 @@ class Repo:
         ).get("Item")
         return from_dynamo(item) if item else None
 
+    def claim_request(self, sub: str, key: str, request_hash: str | None) -> dict | None:
+        """Reserve a key before work that spans several writes and paid calls.
+
+        Returns None when the claim is ours, or the stored record when someone
+        else already holds the key - which is what a retry of a request that is
+        still running, or has already finished, looks like.
+        """
+        try:
+            self.table.put_item(
+                Item=to_dynamo({
+                    "PK": self.pk(sub), "SK": f"REQ#{key}", "type": "request",
+                    "status": "in_progress",
+                    "requestHash": request_hash,
+                    "createdAt": now_iso(),
+                    "ttl": int(time.time()) + REQUEST_TTL_HOURS * 3600,
+                }),
+                ConditionExpression="attribute_not_exists(SK)",
+            )
+            return None
+        except ClientError as exc:
+            if not _is_conditional_failure(exc):
+                raise
+            return self.get_request(sub, key)
+
+    def finish_request(self, sub: str, key: str, response: dict, http_status: int = 200) -> None:
+        """Mark a claimed key done and store what to replay."""
+        self.table.update_item(
+            Key={"PK": self.pk(sub), "SK": f"REQ#{key}"},
+            UpdateExpression="SET #s = :done, #r = :response, #h = :status",
+            ExpressionAttributeNames={"#s": "status", "#r": "response", "#h": "httpStatus"},
+            ExpressionAttributeValues=to_dynamo({
+                ":done": "done", ":response": json.dumps(response), ":status": http_status,
+            }),
+        )
+
+    def release_request(self, sub: str, key: str) -> None:
+        """Give a claimed key back, so a retry runs fresh. Only call this when
+        nothing was written; the condition stops it removing a finished one."""
+        try:
+            self.table.delete_item(
+                Key={"PK": self.pk(sub), "SK": f"REQ#{key}"},
+                ConditionExpression="#s = :claimed",
+                ExpressionAttributeNames={"#s": "status"},
+                ExpressionAttributeValues=to_dynamo({":claimed": "in_progress"}),
+            )
+        except ClientError as exc:
+            if not _is_conditional_failure(exc):
+                raise
+
     def _request_put_op(self, sub: str, request: RequestRecord, response: dict) -> dict:
         """Joins the write's own transaction. The condition is what turns a
         racing duplicate into RequestReplayed rather than a second write."""
@@ -258,7 +307,9 @@ class Repo:
                 "status": "done",
                 "requestHash": request.request_hash,
                 "httpStatus": request.http_status,
-                "response": response,
+                # JSON, not a map: to_dynamo drops None, and a stored
+                # {"day": null} has to replay as {"day": null}.
+                "response": json.dumps(response),
                 "createdAt": now_iso(),
                 "ttl": int(time.time()) + REQUEST_TTL_HOURS * 3600,
             }),

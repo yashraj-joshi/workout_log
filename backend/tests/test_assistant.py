@@ -460,3 +460,107 @@ def test_the_model_is_told_what_is_already_on_the_day(assistant):
     assert "10 @ 40 lb" in agent.context
     assert "Timezone: America/New_York" in agent.context
     assert "Seated row" in agent.context.split("names he already uses:")[1]
+
+
+# -------------------------------------------------------------- idempotency
+
+KEY = "11111111-2222-3333-4444-555555555555"
+
+
+def _add_row(date=TODAY):
+    return ("add_exercise", {
+        "date": date, "exercise": "Seated row", "group": None, "muscles": None, "unit": "lb",
+        "perHand": None, "notes": None,
+        "sets": [{"reps": 10, "repsMax": None, "weight": 40, "seconds": None, "minutes": None,
+                  "distance": None, "distanceUnit": None, "note": None}],
+    })
+
+
+def keyed(client, said="seated row 10 at 40", key=KEY, date=TODAY):
+    return client.post("/v1/assistant",
+                       json={"text": said, "date": date, "today": TODAY, "timezone": "UTC"},
+                       headers={"Idempotency-Key": key})
+
+
+def test_the_same_recording_sent_twice_logs_once(assistant):
+    """The reply is lost on a weak connection and the app sends it again. The
+    second one must replay the first answer, not log a second set."""
+    first = keyed(assistant(script=[_add_row()], reply="Logged #1 Seated row: 10 @ 40 lb."))
+    assert first.status_code == 200
+
+    second = keyed(assistant(script=[_add_row()], reply="Logged #1 Seated row: 10 @ 40 lb."))
+    assert second.status_code == 200
+    assert second.json() == first.json(), "the stored answer comes back unchanged"
+    assert len(second.json()["days"][0]["exercises"]) == 1, "and nothing was logged twice"
+
+
+def test_a_turn_still_running_asks_the_app_to_wait():
+    """The first copy is still working when the second arrives. Replaying a
+    half-finished answer would be worse than asking the app to wait."""
+    from workoutlog.errors import ApiError
+    from workoutlog.idempotency import replay
+
+    with pytest.raises(ApiError) as caught:
+        replay({"status": "in_progress", "requestHash": "abc"}, "abc")
+    assert caught.value.status == 409
+    assert caught.value.code == "request_in_progress"
+
+
+def test_a_key_claimed_by_a_different_turn_is_refused_even_while_it_runs(assistant, repo):
+    repo.claim_request("user-1", KEY, "a-different-request")
+    response = keyed(assistant(script=[]))
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "idempotency_key_reused"
+
+
+def test_a_key_reused_for_a_different_turn_is_refused(assistant):
+    keyed(assistant(script=[_add_row()]))
+    response = keyed(assistant(script=[]), said="something else entirely")
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "idempotency_key_reused"
+
+
+def test_a_turn_that_failed_before_writing_can_be_retried(assistant):
+    from workoutlog.errors import ApiError
+
+    def broken(**kwargs):
+        raise ApiError(502, "ai_unavailable", "Couldn't reach the AI. Nothing was logged.")
+
+    assert keyed(assistant(script=[], agent=broken)).status_code == 502
+    # The key was given back, so the same recording can be sent again.
+    retry = keyed(assistant(script=[_add_row()], reply="Logged #1 Seated row: 10 @ 40 lb."))
+    assert retry.status_code == 200
+    assert retry.json()["changedDates"] == [TODAY]
+
+
+def test_a_turn_that_failed_after_writing_reports_what_it_managed(assistant):
+    """Half-logged is not "nothing was logged". The turn ends with what it
+    did and an undo token, and the key is spent so a retry cannot repeat it."""
+    from conftest import scripted
+    from workoutlog.errors import ApiError
+
+    inner = scripted(_add_row())
+
+    def half(**kwargs):
+        inner(**kwargs)
+        raise ApiError(504, "ai_timeout", "That took too long. Check the day to see what was logged.")
+
+    response = keyed(assistant(script=[], agent=half))
+    assert response.status_code == 200
+    body = response.json()
+    assert body["reply"] == "That took too long. Check the day to see what was logged."
+    assert body["changedDates"] == [TODAY]
+    assert body["undoToken"], "so the half-logged turn can be taken back"
+
+    # Sending it again replays rather than logging the row a second time.
+    again = keyed(assistant(script=[_add_row()]))
+    assert again.json() == body
+
+
+def test_a_turn_without_a_key_still_works(assistant):
+    assert turn(assistant(script=[_add_row()])).status_code == 200
+
+
+def test_a_key_that_is_not_a_uuid_is_refused(assistant):
+    response = keyed(assistant(script=[]), key="not-a-uuid")
+    assert response.status_code == 400
