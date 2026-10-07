@@ -22,10 +22,10 @@
     { "reps": 10, "repsMax": 10,   "out": "10" }
   ],
   "dates": [
-    { "date": "2026-09-21", "today": "2026-09-25", "long": "Monday, September 21",    "short": "Sep 21" },
-    { "date": "2026-09-25", "today": "2026-09-25", "long": "Friday, September 25",    "short": "Sep 25" },
-    { "date": "2025-12-31", "today": "2026-09-25", "long": "Wednesday, December 31, 2025", "short": "Dec 31, 2025" },
-    { "date": "2026-02-01", "today": "2026-09-25", "long": "Sunday, February 1",      "short": "Feb 1" }
+    { "date": "2026-09-21", "today": "2026-09-25", "long": "Monday, September 21",    "short": "Sep 21",       "month": "September 2026" },
+    { "date": "2026-09-25", "today": "2026-09-25", "long": "Friday, September 25",    "short": "Sep 25",       "month": "September 2026" },
+    { "date": "2025-12-31", "today": "2026-09-25", "long": "Wednesday, December 31, 2025", "short": "Dec 31, 2025", "month": "December 2025" },
+    { "date": "2026-02-01", "today": "2026-09-25", "long": "Sunday, February 1",      "short": "Feb 1",        "month": "February 2026" }
   ],
   "changes": [
     { "current": { "kind": "weight",  "value": 45, "unit": "lb", "reps": 10 }, "previous": { "kind": "weight", "value": 40, "unit": "lb", "reps": 12 }, "out": "+5 lb" },

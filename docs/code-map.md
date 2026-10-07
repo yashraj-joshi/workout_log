@@ -216,7 +216,7 @@ wrong, or you are changing how something is stored.
 ### `logic.py` - workout rules
 
 Pure functions over plain dicts, with no I/O. Each has a line-for-line twin in
-`web/js/logic.js` (phase 4). If you change one, change the other and add a
+`web/js/logic.js`. If you change one, change the other and add a
 case to `shared/fixtures/`.
 
 | Section | Functions |
@@ -273,13 +273,36 @@ file. It exists so both versions can be checked against
 **Open it when:** you are changing the error format or chasing a 500
 `internal_error`.
 
+### `idempotency.py` - running a write at most once
+
+Two shapes, because the routes have two shapes.
+
+- `run_once` is for a write that fits in one transaction (adding an exercise,
+  moving one). The key's record joins that transaction, so the write and the
+  record land together or not at all.
+- `Claim` is for `POST /v1/assistant`, which makes several writes and two paid
+  calls and cannot fit in one transaction. It reserves the key first
+  (`claim_request`), does the work, and marks it done at the end
+  (`finish_request`). A failure before anything was written gives the key back
+  (`release_request`) so a retry runs fresh.
+- `replay` returns the first answer. It is stored as JSON rather than a
+  DynamoDB map, because `to_dynamo` drops `None` and a null field that
+  vanished on a replay would be a different answer.
+
+**Open it when:** a repeated request logs twice, or you see 409
+`request_in_progress` or 422 `idempotency_key_reused`.
+
 ### `assistant/` - the OpenAI side
 
 | File | What it does | Open it when |
 | --- | --- | --- |
 | `openai_client.py` | The only code that reads the key (from SSM, once per cold start). Builds the client with a timeout and 1 retry. `ai_errors` maps SDK failures to our errors | Model calls fail, time out, or report quota |
-| `prompts.py` | `SUMMARY_SYSTEM`, the summary instructions | Changing the summary's tone or length |
+| `prompts.py` | `SUMMARY_SYSTEM` and `ASSISTANT_SYSTEM`: how the summary is written, and all of the logging rules | Changing the assistant's behaviour or the summary's tone |
 | `summarizer.py` | `write_summary`: one Responses API call with `store=False`, trimmed to `MAX_SUMMARY` | Changing how the model is called |
+| `transcribe.py` | Speech to text, primed with your recent exercise names as keywords, and returning the audio duration for the cost metric | A name heard wrong, or wrong audio seconds |
+| `tools.py` | What the model may do. The JSON schemas, and `Session`, which runs each call through `service.py` and keeps the before/after snapshots undo needs | A tool call that fails, or adding a new tool |
+| `agent.py` | The loop: build the context, call the Responses API, run the tool calls, feed the results back, stop at 5 round trips or 25 s | A turn that stalls, loops, or comes back empty |
+| `metrics.py` | One EMF line per AI call: tokens, audio seconds, round trips and an estimated cost in dollars | The cost metric looks wrong (docs/09 section 3) |
 
 ---
 
@@ -307,8 +330,17 @@ browser runs. `deploy-web.sh` uploads them (docs/06).
 | `js/session.js` | Access and ID tokens, in memory only. `adopt` (after sign-in), `refresh` (one at a time), `signOut` | 401 loops, sign-out, "Your session ended" |
 | `js/api.js` | Every API call: 10 s deadline, one refresh-and-retry on 401, write retries, `Idempotency-Key`, the error shape | Timeouts, retries, error messages from the API |
 | `js/sync.js` | Loads the whole log with the ETag; 304 when nothing changed | The log doesn't update, or updates too often |
-| `js/store.js` | The offline copy of the log in `localStorage`, per user. The only file that touches browser storage | Offline start, a second person on the same device |
+| `js/store.js` | The offline copy of the log in `localStorage`, per user, plus small UI preferences (the Trends range, the Progress exercise). The only file that touches browser storage | Offline start, a second person on the same device |
 | `js/cognito.js` | SRP sign-in, first password, forgot password, via the vendored library. Turns Cognito errors into plain messages | Sign-in errors |
+| `js/logic.js` | The workout rules: name lookup, compact lines, top sets, per-muscle tallies, the place guess, date and number formatting. Twin of `backend/src/workoutlog/logic.py`; `shared/fixtures/` runs against both | A number or a label that disagrees with the backend |
+| `js/catalog.js` | Loads `exercise_catalog.json` once at boot, so `lookup()` is synchronous everywhere else | Unknown muscles, an area that won't fill itself in |
+| `js/parse.js` | What the Add/Edit dialog does with typed input: reps ranges (`10-12`, `10 to 12`), numbers and their limits, muscle names, and the exact error wording | A set that won't save, or a wrong error message |
+| `js/views/day.js` | The Day tab: calendar, day header, the gym/home switch, stat tiles, the editable summary, notes and bodyweight, sets per muscle, exercise cards, the example day | Anything on the Day tab |
+| `js/views/editor.js` | The Add / Edit exercise dialog: suggestions, "Same as last time", the Weights/Time/Hold switch, set rows, saving, moving and removing | Adding or editing an exercise |
+| `js/views/trends.js` | The Trends tab: the range window, the four tiles, the week-column heatmap, sets per muscle and the areas with no work | A trend number, or the heatmap |
+| `js/views/progress.js` | The Progress tab: the exercise picker, the inline-SVG top-set chart (axis ticks, scrubbing) and the session history | The chart, or a change label |
+| `js/csv.js` | Export CSV, built in the browser. Twin of `backend/src/workoutlog/export_csv.py`, checked against the same golden file | A column that is wrong or missing in the export |
+| `js/voice.js` | The mic button, the recorder (container, level meter, 60 s cap), the result card, Undo, and the wording of every voice error | Recording, or a message after a failed turn |
 | `js/views/signin.js` | The sign-in screen and its three side steps | The sign-in forms |
 | `js/dom.js` | `h()` builds elements with text nodes only, so user text can't become markup. `toast()` | Rendering helpers |
 | `sw.js` | Caches the app shell; never `/v1/*` or `/health`. `VERSION` is stamped with the commit at deploy | A stale app after a deploy |
@@ -334,6 +366,9 @@ dependencies.
 | `test_sessions.py` | The cookie routes: Origin check, cookie attributes, rotation, session mismatch, sign-out, no tokens in logs, Cognito error mapping |
 | `test_idempotency.py` | Retries replay instead of writing twice, reused keys are rejected, keys stay per user, a racing duplicate is caught by the transaction |
 | `test_catalog_sync.py` | The three catalog copies match, and the catalog is well formed |
+| `test_assistant.py` | Every voice case in the brief, end to end, with what the model decides scripted and OpenAI never reached. Also undo, the daily limit, 403 without AI, and the idempotency of a resent recording |
+| `test_agent.py` | The loop itself: tool calls and their outputs, the round-trip cap, the deadline, token accounting. Its fakes are built from the SDK's own response types, so an SDK that changes shape fails here |
+| `test_import_legacy.py` | Both old formats, including a round trip through the real CSV exporter |
 | `test_finish.py` | "Done for today": runs once, sees only computed facts, survives a race, returns 400/403/429 correctly |
 | `test_isolation.py` | A second user can't see or change the first user's data |
 | `test_repo.py` | Locking and retries, the ETag counter, atomic moves, numbers round-tripping, the usage counter |
@@ -440,9 +475,6 @@ Other files already mention these paths, so here is when each arrives.
 
 | Path | Phase |
 | --- | --- |
-| `web/js/logic.js`, `web/js/views/day.js`, the logic fixture tests | 4 |
-| `web/js/csv.js` | 5 |
-| `/v1/assistant`, `/v1/assistant/undo` | 6 |
 | Import of the old log | 7 |
 | `docs/07` to `docs/09` | As each phase lands |
 

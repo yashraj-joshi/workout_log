@@ -356,6 +356,12 @@ def fmt_date_long(value: str, today: str | None = None) -> str:
     return text
 
 
+def fmt_month(value: str) -> str:
+    """The calendar's month heading: "September 2026"."""
+    d = parse_date(value)
+    return f"{_MONTHS_LONG[d.month - 1]} {d.year}"
+
+
 def fmt_date_short(value: str, today: str | None = None) -> str:
     d = parse_date(value)
     text = f"{_MONTHS_SHORT[d.month - 1]} {d.day}"

@@ -31,6 +31,47 @@ Parameters:
   AssistantModel:
     Type: String
     Default: gpt-6-luna
+    Description: The model that logs and answers. gpt-6-sol costs about 20x as much.
+
+  TranscribeModel:
+    Type: String
+    Default: gpt-transcribe
+    Description: Speech to text for voice logging.
+
+  # These only feed the EstimatedCostUsd metric. Checked Sep 2026; see docs/09.
+  PriceInputPerMillion:
+    Type: String
+    Default: "0.10"
+    Description: USD per 1M input tokens, for the cost metric only.
+
+  PriceOutputPerMillion:
+    Type: String
+    Default: "0.50"
+    Description: USD per 1M output tokens, for the cost metric only.
+
+  PriceTranscribePerMinute:
+    Type: String
+    Default: "0.0045"
+    Description: USD per minute of audio, for the cost metric only.
+
+  DailyCostAlarmUsd:
+    Type: Number
+    Default: 1
+    MinValue: 0
+    Description: Alarm when a day's estimated OpenAI spend passes this, in USD.
+
+  AlarmEmail:
+    Type: String
+    Default: ""
+    AllowedPattern: "^$|^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$"
+    Description: >
+      Where alarms are emailed. Leave empty and the alarms still exist and are
+      visible in the console, they just have nowhere to send to. AWS emails a
+      confirmation link the first time you set it; the subscription does
+      nothing until you click it.
+
+Conditions:
+  NotifyAlarms: !Not [!Equals [!Ref AlarmEmail, ""]]
 
 Globals:
   Function:
@@ -206,6 +247,12 @@ Resources:
           OPENAI_KEY_PARAM: !Ref OpenAIKeyParam
           OPENAI_TIMEOUT: "22"
           ASSISTANT_MODEL: !Ref AssistantModel
+          TRANSCRIBE_MODEL: !Ref TranscribeModel
+          # Used only to estimate the cost metric, in dollars. Update these
+          # when OpenAI's prices change; nothing else depends on them.
+          PRICE_INPUT_PER_M: !Ref PriceInputPerMillion
+          PRICE_OUTPUT_PER_M: !Ref PriceOutputPerMillion
+          PRICE_TRANSCRIBE_PER_MIN: !Ref PriceTranscribePerMinute
       Policies:
         - Statement:
             - Effect: Allow
@@ -222,6 +269,91 @@ Resources:
               Resource: !Sub arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter${OpenAIKeyParam}
       Events:
         Finish: { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Path: "/v1/days/{date}/finish", Method: POST } }
+        Assistant: { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Path: /v1/assistant, Method: POST } }
+        AssistantUndo: { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Path: /v1/assistant/undo, Method: POST } }
+
+  # ---------------------------------------------------------------- alarms
+  # Four things worth being told about. Each one is a condition that means
+  # something is actually broken or costing money, rather than a dashboard.
+  AlarmTopic:
+    Type: AWS::SNS::Topic
+    Condition: NotifyAlarms
+    Properties:
+      DisplayName: Workout Log alarms
+      Subscription:
+        - Protocol: email
+          Endpoint: !Ref AlarmEmail
+
+  ApiErrorsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub ${AWS::StackName}-api-errors
+      AlarmDescription: ApiFunction is throwing. The app's reads and writes are failing.
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions: [{ Name: FunctionName, Value: !Ref ApiFunction }]
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 3
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: !If [NotifyAlarms, [!Ref AlarmTopic], !Ref "AWS::NoValue"]
+
+  AssistantErrorsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub ${AWS::StackName}-assistant-errors
+      AlarmDescription: >
+        AssistantFunction is throwing. Voice logging is down; the rest of the
+        app is unaffected.
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions: [{ Name: FunctionName, Value: !Ref AssistantFunction }]
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 3
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: !If [NotifyAlarms, [!Ref AlarmTopic], !Ref "AWS::NoValue"]
+
+  # 29 s is the function's timeout. Sitting near it means turns are about to
+  # start failing outright.
+  AssistantSlowAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub ${AWS::StackName}-assistant-slow
+      AlarmDescription: Voice turns are running close to the function's timeout.
+      Namespace: AWS/Lambda
+      MetricName: Duration
+      Dimensions: [{ Name: FunctionName, Value: !Ref AssistantFunction }]
+      ExtendedStatistic: p95
+      Period: 900
+      EvaluationPeriods: 2
+      Threshold: 25000
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: !If [NotifyAlarms, [!Ref AlarmTopic], !Ref "AWS::NoValue"]
+
+  # From the EMF line assistant/metrics.py writes. The daily limit caps the
+  # number of calls; this catches a call that got far more expensive.
+  AiCostAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub ${AWS::StackName}-ai-cost
+      AlarmDescription: >
+        Estimated OpenAI spend through this stack passed the daily threshold.
+        An estimate from token counts, not a bill.
+      Namespace: WorkoutLog
+      MetricName: EstimatedCostUsd
+      Statistic: Sum
+      Period: 86400
+      EvaluationPeriods: 1
+      Threshold: !Ref DailyCostAlarmUsd
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: !If [NotifyAlarms, [!Ref AlarmTopic], !Ref "AWS::NoValue"]
 
   ApiLogs:
     Type: AWS::Logs::LogGroup

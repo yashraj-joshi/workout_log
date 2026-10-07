@@ -34,6 +34,7 @@
       <h1 class="title">Workout Log</h1>
       <div class="top-actions" id="top-actions" hidden>
         <button class="btn only-pointer" id="refresh" type="button">Refresh</button>
+        <button class="btn" id="export" type="button">Export CSV</button>
         <div class="menu">
           <button class="btn" id="account-btn" type="button" aria-haspopup="true" aria-expanded="false"
                   aria-controls="account-menu">Account</button>
@@ -58,26 +59,23 @@
 
     <div id="app-body" hidden>
       <section class="panel" id="panel-day" role="tabpanel" aria-labelledby="tab-day" tabindex="0">
-        <div class="card">
-          <h2 class="section-title">Your log</h2>
-          <div id="log-summary"></div>
-        </div>
-        <p class="meta coming">The calendar, exercises and day summary arrive with the Day tab.</p>
+        <div id="day-tab"></div>
       </section>
       <section class="panel" id="panel-trends" role="tabpanel" aria-labelledby="tab-trends" tabindex="0" hidden>
-        <div class="card">
-          <h2 class="section-title">Trends</h2>
-          <p class="meta">Workouts per week, the heatmap and sets per muscle arrive here.</p>
-        </div>
+        <div id="trends-tab"></div>
       </section>
       <section class="panel" id="panel-progress" role="tabpanel" aria-labelledby="tab-progress" tabindex="0" hidden>
-        <div class="card">
-          <h2 class="section-title">Progress</h2>
-          <p class="meta">Per-exercise history and the top-set chart arrive here.</p>
-        </div>
+        <div id="progress-tab"></div>
       </section>
     </div>
   </main>
+
+  <!-- The mic, and the card a voice turn comes back in. Filled in only for
+       accounts with AI access. -->
+  <div id="voice"></div>
+
+  <!-- The Add / Edit dialog is appended here while it is open. -->
+  <div id="dialogs"></div>
 
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 </body>

@@ -415,3 +415,729 @@ main.wrap {
   justify-content: center;
   gap: 4px 16px;
 }
+
+/* ======================================================= Day tab (phase 4) */
+
+/* Mobile is one column in reading order. From 960px the left column holds the
+   calendar, stats, summary and muscles, and the right holds the exercises. */
+.day-grid { display: grid; gap: var(--gap); }
+.col { display: grid; gap: var(--gap); align-content: start; }
+
+@media (min-width: 960px) {
+  .day-grid {
+    grid-template-columns: minmax(0, 380px) minmax(0, 1fr);
+    gap: var(--block);
+    align-items: start;
+  }
+}
+
+/* -------------------------------------------------------------- calendar */
+.cal-top {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+
+.cal-month {
+  flex: 1;
+  font-family: var(--font-display);
+  font-size: 21px;
+  font-weight: 600;
+  line-height: 1.1;
+}
+
+.cal-arrow {
+  width: var(--tap);
+  min-height: var(--tap);
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  border-radius: 8px;
+}
+.cal-arrow:hover { color: var(--ink); }
+
+.cal-today { padding: 0 10px; }
+
+.cal-head, .cal-week {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+}
+
+.cal-head {
+  margin-bottom: 2px;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--faint);
+}
+
+.cal-cell { display: flex; }
+
+/* The whole 44px cell is the tap target; the circle inside it is 32px. */
+.cal-day {
+  flex: 1;
+  min-height: var(--tap);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  cursor: pointer;
+}
+
+.cal-num {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  font-variant-numeric: tabular-nums;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ink);
+}
+.cal-day[data-future="true"] .cal-num { color: var(--faint); }
+.cal-day[data-today="true"] .cal-num {
+  color: var(--accent);
+  font-weight: 600;
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+}
+.cal-day[data-selected="true"] .cal-num {
+  background: var(--ink);
+  color: var(--ground);
+  box-shadow: none;
+}
+
+.cal-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+/* Keeps the row aligned on days with nothing logged. */
+.cal-dot.blank { visibility: hidden; }
+.cal-dot.gym, .key-dot.gym { background: var(--gym); }
+.cal-dot.home, .key-dot.home { background: var(--home); }
+
+.cal-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  margin-top: 14px;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.key { display: inline-flex; align-items: center; gap: 5px; }
+
+.key-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* -------------------------------------------------------------- day head */
+.day-title { margin-bottom: 2px; }
+.today-tag { color: var(--accent); }
+
+.where { margin-top: 12px; }
+.where .label { margin-bottom: 6px; }
+.where-seg { max-width: 260px; }
+/* The shared segmented control is 40px; these are stand-alone controls rather
+   than the header's tab strip, so they get the full 44px. */
+.where-seg > button, .sheet .seg > button { min-height: var(--tap); }
+.where-seg > button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.where .meta { margin-top: 6px; }
+
+/* ------------------------------------------------------------ stat tiles */
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--gap);
+}
+@media (min-width: 600px) {
+  .tiles { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+@media (min-width: 960px) {
+  /* Back to 2 x 2: the left column is too narrow for four. */
+  .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+.tile { padding: 12px 14px; }
+.stat-value.ranged { font-size: 24px; }
+
+/* ---------------------------------------------------- editable day fields */
+.edit { display: grid; gap: 6px; }
+.edit + .edit { margin-top: 14px; }
+
+.box {
+  width: 100%;
+  min-height: var(--tap);
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--ground);
+  /* 16px stops iOS zooming into the field on focus. */
+  font-size: 16px;
+  font-family: inherit;
+}
+textarea.box { resize: vertical; line-height: 1.5; }
+.box.short { max-width: 140px; font-variant-numeric: tabular-nums; }
+
+.edit-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap);
+}
+.count { font-variant-numeric: tabular-nums; }
+
+/* -------------------------------------------------------- sets per muscle */
+.bars { display: grid; gap: 8px; margin-top: 8px; }
+
+.bar-row {
+  display: grid;
+  grid-template-columns: minmax(84px, 1fr) minmax(0, 2fr) auto;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+}
+
+.bar-track {
+  height: 10px;
+  border-radius: 999px;
+  background: var(--hair);
+  overflow: hidden;
+}
+
+.bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent);
+}
+
+.bar-count {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ------------------------------------------------------- exercise cards */
+.ex-list { display: grid; gap: var(--gap); }
+
+.ex-top {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.ex-num {
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.ex-name {
+  padding: 0;
+  border: 0;
+  background: none;
+  text-align: left;
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1.1;
+  color: var(--ink);
+  cursor: pointer;
+}
+/* The padding makes it a 44px tap target without moving the text: the
+   baseline it shares with the number is measured from the text, not the box. */
+.ex-name { padding: 10px 0; margin: -10px 0; }
+.ex-name:hover { color: var(--accent); }
+.ex-name.plain { cursor: default; }
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* A ring in the area's colour, rather than a filled block of it. */
+.ring {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid var(--area-core);
+  flex-shrink: 0;
+}
+.ring[data-area="chest"] { border-color: var(--area-chest); }
+.ring[data-area="back"] { border-color: var(--area-back); }
+.ring[data-area="legs"] { border-color: var(--area-legs); }
+.ring[data-area="shoulders"] { border-color: var(--area-shoulders); }
+.ring[data-area="arms"] { border-color: var(--area-arms); }
+.ring[data-area="core"] { border-color: var(--area-core); }
+.ring[data-area="cardio"] { border-color: var(--area-cardio); }
+.ring[data-area="mobility"] { border-color: var(--area-mobility); }
+
+.pill.muscle {
+  padding: 2px 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 12px;
+  color: var(--muted);
+}
+/* The main muscle first, and emphasised. */
+.pill.muscle.main {
+  border-color: var(--ink);
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.compact {
+  margin-top: 8px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Wide tables scroll inside their own card; the page never scrolls sideways. */
+.table-wrap {
+  margin-top: 10px;
+  overflow-x: auto;
+}
+
+table.sets {
+  /* Sized to its contents, so a two-column table doesn't spread "Reps" and
+     "Weight" to opposite edges of a wide card. */
+  width: auto;
+  border-collapse: collapse;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+table.sets th, table.sets td {
+  padding: 6px 28px 6px 0;
+  text-align: left;
+  white-space: nowrap;
+}
+table.sets th:last-child, table.sets td:last-child { padding-right: 0; }
+table.sets thead th {
+  border-bottom: 1px solid var(--hair);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+table.sets tbody th {
+  font-weight: 500;
+  color: var(--faint);
+}
+table.sets tbody tr + tr th, table.sets tbody tr + tr td {
+  border-top: 1px solid var(--hair);
+}
+
+.ex-note { margin-top: 10px; }
+
+.ex-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+.ex-actions .meta { margin-right: auto; }
+
+/* ------------------------------------------------- empty day and example */
+.empty-day {
+  padding: 18px 16px;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius);
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.example { display: grid; gap: var(--gap); }
+
+.notice.banner {
+  border-color: transparent;
+  background: var(--accent-soft);
+  color: var(--ink);
+}
+
+.card.dashed { border-style: dashed; }
+
+/* ----------------------------------------------------- two ways to log */
+.ways { display: grid; gap: 8px; }
+.ways .label + .ways-list { margin-top: 0; }
+
+.ways-list {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 6px;
+  font-size: 14px;
+  color: var(--muted);
+}
+.ways-list strong { color: var(--ink); }
+.ways-list.quotes { list-style: none; padding-left: 0; }
+
+/* ===================================== Add / Edit dialog (full screen on
+   phones, centred from 600px) */
+dialog.sheet {
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  /* Surface, not ground: .box fields fill with ground and would vanish. */
+  background: var(--surface);
+  color: var(--ink);
+}
+dialog.sheet::backdrop { background: rgb(0 0 0 / 0.5); }
+
+@media (min-width: 600px) {
+  dialog.sheet {
+    width: min(560px, calc(100vw - 2 * var(--gutter)));
+    height: auto;
+    max-height: min(88vh, 820px);
+    margin: auto;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+  }
+}
+
+.sheet-form {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  max-height: inherit;
+}
+
+.sheet-top, .sheet-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px max(var(--gutter), env(safe-area-inset-left));
+  background: inherit;
+  flex-shrink: 0;
+}
+
+.sheet-top {
+  justify-content: space-between;
+  border-bottom: 1px solid var(--line);
+  padding-top: calc(12px + env(safe-area-inset-top));
+}
+
+.sheet-foot {
+  flex-wrap: wrap;
+  border-top: 1px solid var(--line);
+  padding-bottom: calc(12px + env(safe-area-inset-bottom));
+}
+.sheet-foot .danger { margin-left: auto; }
+
+.sheet-body {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  display: grid;
+  gap: 14px;
+  padding: var(--block) max(var(--gutter), env(safe-area-inset-left));
+}
+
+.same-as:empty { display: none; }
+
+/* One set per row: the number, its fields, a note, and × to drop it. */
+.rows { display: grid; gap: 8px; }
+
+.row {
+  display: grid;
+  grid-template-columns: 18px repeat(2, minmax(0, 1fr)) var(--tap);
+  align-items: center;
+  gap: 6px;
+}
+/* Hold work has one field, so its row has one fewer column. */
+.row[data-fields="1"] { grid-template-columns: 18px minmax(0, 1fr) var(--tap); }
+
+.row-head { min-height: 0; }
+.row-head .label { padding-left: 2px; }
+
+.row-num {
+  font-size: 12px;
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.row .box { padding: 6px 10px; }
+/* The × belongs beside the fields; the note takes the width beneath them. */
+.row .row-x { grid-column: -2; grid-row: 1; }
+.row .note { grid-column: 2 / -2; grid-row: 2; }
+
+.row-x {
+  min-height: var(--tap);
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  border-radius: 8px;
+}
+.row-x:disabled { opacity: 0.35; cursor: default; }
+
+.add-set { justify-self: start; }
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: var(--tap);
+  font-size: 15px;
+}
+.check input { width: 20px; height: 20px; accent-color: var(--accent); }
+
+/* ========================================= Trends and Progress (phase 5) */
+
+.stack { display: grid; gap: var(--gap); }
+
+.range { overflow-x: auto; }
+.range > button { flex: 1 0 auto; min-height: var(--tap); padding: 0 10px; }
+
+.tiles.three { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@media (min-width: 600px) {
+  .tiles.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+/* --------------------------------------------------------------- heatmap */
+/* Scrolls inside its card so the page never scrolls sideways. */
+.heat-scroll {
+  overflow-x: auto;
+  padding-bottom: 4px;
+  margin-top: 8px;
+}
+
+.heat { display: inline-block; }
+
+/* The month labels are positioned by column, so they need a row of their own
+   with room for the text above the grid. */
+.heat-months {
+  position: relative;
+  height: 16px;
+  min-width: 100%;
+}
+
+.heat-month {
+  position: absolute;
+  top: 0;
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.heat-grid { display: flex; gap: 3px; }
+.heat-week { display: grid; grid-auto-rows: 12px; gap: 3px; }
+
+.heat-cell {
+  width: 12px;
+  height: 12px;
+  padding: 0;
+  border: 0;
+  border-radius: 2px;
+  background: var(--heat0);
+  cursor: pointer;
+}
+.heat-cell[data-level="1"] { background: var(--heat1); }
+.heat-cell[data-level="2"] { background: var(--heat2); }
+.heat-cell[data-level="3"] { background: var(--heat3); }
+.heat-cell[data-today="true"] { box-shadow: inset 0 0 0 1.5px var(--ink); }
+.heat-cell.empty { background: none; cursor: default; }
+
+.heat-key {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.heat-key .heat-cell { cursor: default; }
+
+/* Dashed, because it marks an absence rather than a thing. */
+.pill.missing {
+  padding: 3px 10px;
+  border: 1px dashed var(--line);
+  border-radius: 999px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* ----------------------------------------------------------------- chart */
+.chart { margin-top: 8px; }
+.chart-svg { display: block; width: 100%; height: auto; touch-action: pan-y; }
+
+.chart-grid { stroke: var(--hair); stroke-width: 1; }
+.chart-label { fill: var(--muted); font-size: 11px; font-family: var(--font-body); }
+.chart-line { stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.chart-dot { fill: var(--accent); }
+/* The best session is hollow rather than a second colour. */
+.chart-dot.best { fill: var(--surface); stroke: var(--accent); stroke-width: 2; }
+.chart-rule { stroke: var(--faint); stroke-width: 1; stroke-dasharray: 3 3; }
+
+/* Reserves its line so the card doesn't jump as you scrub. */
+.chart-tip {
+  min-height: 21px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* --------------------------------------------------------------- history */
+table.history td, table.history th { vertical-align: top; }
+table.history .change { font-weight: 600; }
+.change.good { color: var(--good); }
+.change.bad { color: var(--bad); }
+.change.faint { color: var(--faint); }
+
+/* A link inside a table cell, without the 44px row height a .linklike wants. */
+.linklike.cell {
+  min-height: 0;
+  padding: 0;
+  font-size: inherit;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ============================================= Voice and the AI (phase 6) */
+
+/* The mic sits above the home bar on every tab, with the Type instead button
+   beside it so the same thing can be done without speaking. */
+.voice-bar {
+  position: fixed;
+  right: max(var(--gutter), env(safe-area-inset-right));
+  bottom: calc(20px + env(safe-area-inset-bottom));
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  z-index: 18;
+}
+
+.mic {
+  width: 64px;
+  height: 64px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 6px 18px rgb(0 0 0 / 0.22);
+}
+.mic.live { background: var(--bad); }
+
+.type-instead { background: var(--surface); box-shadow: 0 4px 12px rgb(0 0 0 / 0.14); }
+
+/* The card a turn comes back in, above the mic and inside the gutters. */
+.voice-panel {
+  position: fixed;
+  left: max(var(--gutter), env(safe-area-inset-left));
+  right: max(var(--gutter), env(safe-area-inset-right));
+  bottom: calc(96px + env(safe-area-inset-bottom));
+  margin: 0 auto;
+  max-width: 560px;
+  display: grid;
+  gap: 10px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: 0 10px 30px rgb(0 0 0 / 0.18);
+  z-index: 17;
+}
+
+.voice-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.rec {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* The ring grows with the level meter, so it is obvious the mic is hearing
+   something. --level is set from Web Audio; without it the ring just sits. */
+.rec-ring {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--bad);
+  flex-shrink: 0;
+  transform: scale(calc(1 + var(--level, 0) * 0.6));
+  box-shadow: 0 0 0 calc(var(--level, 0) * 10px) color-mix(in srgb, var(--bad) 25%, transparent);
+  transition: transform 80ms linear, box-shadow 80ms linear;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rec-ring { transition: none; }
+}
+
+.rec-time {
+  font-family: var(--font-display);
+  font-size: 24px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.rec-hint { font-size: 14px; color: var(--muted); }
+
+.transcript { font-style: italic; }
+.reply { font-size: 15px; }
+
+.assumptions {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.question {
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--accent-soft);
+  font-weight: 600;
+}
+
+.voice-type .box { background: var(--ground); }
+
+/* "Done for today", above the summary box while it is still available. */
+.finish {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+.finish .btn { justify-self: start; }

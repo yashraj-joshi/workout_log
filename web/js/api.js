@@ -6,6 +6,9 @@
 //   an Idempotency-Key, so a retry after a lost reply can't log a set twice.
 
 export const TIMEOUT_MS = 10_000;
+// The assistant transcribes and then runs the model, and gives itself 25 s to
+// do it. Waiting less here would abandon a turn that is about to succeed.
+export const ASSISTANT_TIMEOUT_MS = 30_000;
 const RETRY_DELAYS_MS = [600, 1800];
 const RETRYABLE = new Set([0, 503, 504]);
 
@@ -69,18 +72,18 @@ export async function send(fetchImpl, path, { method = "GET", headers = {}, body
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export function createApi({ fetch: fetchImpl, session, sleep = wait, newKey = () => crypto.randomUUID() }) {
-  async function once(method, path, { body, etag, key }) {
+  async function once(method, path, { body, etag, key, timeoutMs }) {
     const token = await session.accessToken();
     const headers = { Authorization: `Bearer ${token}` };
     if (body !== undefined) headers["Content-Type"] = "application/json";
     if (etag) headers["If-None-Match"] = etag;
     if (key) headers["Idempotency-Key"] = key;
-    let res = await send(fetchImpl, path, { method, headers, body });
+    let res = await send(fetchImpl, path, { method, headers, body, timeoutMs });
     if (res.status === 401) {
       // `stale` lets ten calls that all hit 401 share one refresh.
       await session.refresh({ stale: token });
       headers.Authorization = `Bearer ${await session.accessToken()}`;
-      res = await send(fetchImpl, path, { method, headers, body });
+      res = await send(fetchImpl, path, { method, headers, body, timeoutMs });
     }
     if (res.status >= 400) throw errorFrom(res.status, res.data);
     return res;
@@ -88,13 +91,19 @@ export function createApi({ fetch: fetchImpl, session, sleep = wait, newKey = ()
 
   // idempotent: true makes one key for this action and sends the same key on
   // every retry of it. A new call is a new action and gets a new key.
-  async function request(method, path, { body, etag, idempotent = false } = {}) {
-    const key = idempotent ? newKey() : null;
+  async function request(method, path, { body, etag, idempotent = false, key: given,
+                                         retry = true, timeoutMs } = {}) {
+    // `idempotent` makes a fresh key for this action; `key` reuses one the
+    // caller is holding across retries of the same action.
+    const key = given || (idempotent ? newKey() : null);
     const safeToRepeat = method === "GET" || method === "PUT" || method === "PATCH" || method === "DELETE";
-    const retries = method !== "GET" && (key || safeToRepeat) ? RETRY_DELAYS_MS.length : 0;
+    // retry: false is for the assistant. Its key makes a repeat safe, but the
+    // first attempt may still be running, and a silent second 30 s wait is
+    // worse than telling you it failed and offering Retry.
+    const retries = retry && method !== "GET" && (key || safeToRepeat) ? RETRY_DELAYS_MS.length : 0;
     for (let attempt = 0; ; attempt++) {
       try {
-        return await once(method, path, { body, etag, key });
+        return await once(method, path, { body, etag, key, timeoutMs });
       } catch (err) {
         // The first DELETE may have landed before its reply was lost.
         if (attempt > 0 && method === "DELETE" && err.status === 404) return { status: 204, etag: null, data: null };
@@ -104,11 +113,52 @@ export function createApi({ fetch: fetchImpl, session, sleep = wait, newKey = ()
     }
   }
 
+  // The day routes answer {"day": {...}}, or {"day": null} when the write
+  // emptied the day and the server deleted it. A write whose reply was lost
+  // and then retried can come back with no body at all, so callers refresh
+  // after every write rather than trusting what they get here.
+  const body = async (promise) => (await promise).data;
+  const day = (date) => `/v1/days/${encodeURIComponent(date)}`;
+  const exercise = (date, key) => `${day(date)}/exercises/${encodeURIComponent(key)}`;
+
   return {
     request,
     me: async () => (await request("GET", "/v1/me")).data,
     // 304 when the log hasn't changed since `etag`; then data is null.
     listDays: ({ etag, cursor } = {}) =>
       request("GET", cursor ? `/v1/days?cursor=${encodeURIComponent(cursor)}` : "/v1/days", { etag }),
+    readDay: (date) => body(request("GET", day(date))),
+    // place, notes, bodyweight and summary. null removes a field.
+    patchDay: (date, patch) => body(request("PATCH", day(date), { body: patch })),
+    // The server assigns the order and loggedAt, so a repeat of this one would
+    // add a second copy: it carries an Idempotency-Key.
+    addExercise: (date, item) => body(request("POST", `${day(date)}/exercises`, { body: item, idempotent: true })),
+    putExercise: (date, key, item) => body(request("PUT", exercise(date, key), { body: item })),
+    removeExercise: (date, key) => body(request("DELETE", exercise(date, key))),
+    moveExercise: (date, key, toDate) =>
+      body(request("POST", `${exercise(date, key)}/move`, { body: { toDate }, idempotent: true })),
+
+    // The AI routes. The assistant is never retried automatically - a repeat
+    // costs money and could log a second copy - but it does carry a key, so a
+    // retry you ask for replays the first answer instead of logging twice.
+    assistant: (turn, key) =>
+      body(request("POST", "/v1/assistant",
+                   { body: turn, key, retry: false, timeoutMs: ASSISTANT_TIMEOUT_MS })),
+    // A few bytes: after a dropped upload, ask whether the server already has
+    // the turn before sending the recording again.
+    requestState: async (key) => {
+      try {
+        return (await request("GET", `/v1/requests/${encodeURIComponent(key)}`)).data.state;
+      } catch (err) {
+        return err.status === 404 ? null : "unknown";
+      }
+    },
+    undoAssistant: (undoToken) =>
+      body(request("POST", "/v1/assistant/undo", { body: { undoToken } })),
+    // Conditional on the server, so a second press gets 409 rather than a
+    // second summary.
+    finishDay: (date, notes) =>
+      body(request("POST", `${day(date)}/finish`, { body: notes ? { notes } : {},
+                                                    timeoutMs: ASSISTANT_TIMEOUT_MS })),
   };
 }

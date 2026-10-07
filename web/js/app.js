@@ -8,10 +8,17 @@
 
 import { $, h, replace, toast } from "./dom.js";
 import { createApi } from "./api.js";
+import { loadCatalog } from "./catalog.js";
 import { createSession } from "./session.js";
 import { createStore } from "./store.js";
 import { createSync, POLL_MS } from "./sync.js";
+import { createVoice } from "./voice.js";
+import { exportCsv } from "./csv.js";
+import { createDayTab } from "./views/day.js";
+import { openEditor } from "./views/editor.js";
+import { createProgressTab } from "./views/progress.js";
 import { renderSignIn } from "./views/signin.js";
+import { createTrendsTab } from "./views/trends.js";
 
 const config = globalThis.WORKOUT_LOG_CONFIG;
 const store = createStore();
@@ -21,8 +28,23 @@ const touch = matchMedia("(pointer: coarse)").matches;
 
 let sync = null;
 let user = null; // {sub, email, groups}
+let dayTab = null;
+let trendsTab = null;
+let progressTab = null;
+let voice = null;
 let pollTimer = null;
 let swRegistration = null;
+let selectTab = () => {};
+
+const canUseAI = () => Boolean(user && user.groups.some((g) => g === "ai-users" || g === "admins"));
+
+// The device's own calendar date. A day is local: logging at 11pm belongs to
+// that evening, not to tomorrow in UTC.
+function todayISO() {
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+}
 
 const STATUS = {
   connecting: "Connecting…",
@@ -37,11 +59,20 @@ async function boot() {
   registerServiceWorker();
   wireTabs();
   wireAccountMenu();
+  wireExport();
   wireRefresh();
   if (!config) {
     showSignedOut();
     replace($("#signin"), h("p", { class: "notice bad", role: "alert" },
       "This copy of the app has no config.js. Run make web-config, then reload (docs/06)."));
+    return;
+  }
+  try {
+    await loadCatalog();
+  } catch {
+    showSignedOut();
+    replace($("#signin"), h("p", { class: "notice bad", role: "alert" },
+      "This copy of the app is missing exercise_catalog.json. Run make sync-shared and deploy again (docs/06)."));
     return;
   }
   setStatus("connecting");
@@ -84,6 +115,11 @@ function enterSaved(last, status) {
 
 function startSync(sub) {
   sync = createSync({ api, store: store.forUser(sub), onData: renderLog, onStatus: setStatus });
+  const today = todayISO();
+  dayTab = createDayTab({ root: $("#day-tab"), today, actions: dayActions(), canUseAI: canUseAI() });
+  trendsTab = createTrendsTab({ root: $("#trends-tab"), store, today, actions: { openDay: openDayOn } });
+  progressTab = createProgressTab({ root: $("#progress-tab"), store, today, actions: { openDay: openDayOn } });
+  startVoice();
   renderLog(sync.days());
   clearInterval(pollTimer);
   pollTimer = setInterval(() => { if (document.visibilityState === "visible") tick(); }, POLL_MS);
@@ -129,7 +165,14 @@ function stop() {
   pollTimer = null;
   sync = null;
   user = null;
-  replace($("#log-summary"));
+  dayTab = null;
+  trendsTab = null;
+  progressTab = null;
+  if (voice) voice.destroy();
+  voice = null;
+  replace($("#day-tab"));
+  replace($("#trends-tab"));
+  replace($("#progress-tab"));
 }
 
 // --------------------------------------------------------------- screens
@@ -175,19 +218,90 @@ function setStatus(state) {
   $("#status-text").textContent = STATUS[state];
 }
 
-// Until the Day tab lands (phase 4), the panel proves the sync works.
 function renderLog(days) {
-  const el = $("#log-summary");
-  if (!user) return; // a sync that finished after sign-out
-  if (!days) return replace(el, h("p", { class: "meta" }, "Loading your log…"));
-  if (days.length === 0) return replace(el, h("p", { class: "meta" }, "No workouts logged yet."));
-  const latest = days.reduce((a, b) => (a.date > b.date ? a : b));
-  const when = new Date(`${latest.date}T00:00:00`).toLocaleDateString("en-US",
-    { weekday: "long", month: "long", day: "numeric", year: "numeric" });
-  replace(el,
-    h("p", { class: "stat-value" }, days.length.toLocaleString("en-US")),
-    h("p", { class: "label" }, days.length === 1 ? "Day logged" : "Days logged"),
-    h("p", { class: "meta" }, `Latest: ${when}`));
+  if (!user || !dayTab) return; // a sync that finished after sign-out
+  // null means nothing has loaded and nothing was saved: not an empty log.
+  if (!days) return replace($("#day-tab"), h("p", { class: "meta" }, "Loading your log…"));
+  const today = todayISO();
+  dayTab.update(days, today);
+  trendsTab.update(days, today);
+  progressTab.update(days, today);
+}
+
+// Voice is for accounts in ai-users or admins. The API enforces that on every
+// call; this only decides whether to offer the button.
+function startVoice() {
+  if (voice) voice.destroy();
+  voice = null;
+  if (!canUseAI()) return replace($("#voice"));
+  voice = createVoice({
+    host: $("#voice"),
+    api,
+    getDate: () => (dayTab ? dayTab.selected() : null),
+    getToday: todayISO,
+    actions: {
+      // A turn can touch more than one day, and can delete one.
+      applied: (result) => {
+        if (!sync) return;
+        for (const day of result.days || []) {
+          sync.applyDay(day.date, day.deleted ? null : day);
+        }
+        const [first] = result.changedDates || [];
+        if (first && dayTab) {
+          dayTab.select(first);
+          selectTab("day");
+        }
+        sync.refresh();
+      },
+    },
+  });
+}
+
+// The calendar heatmap and the Progress history both open a day this way.
+function openDayOn(date) {
+  if (!dayTab) return;
+  dayTab.select(date);
+  selectTab("day");
+}
+
+// ------------------------------------------------------------- the day tab
+
+function dayActions() {
+  return {
+    api,
+    refresh: () => sync && sync.refresh(),
+    applyDay: (date, day) => sync && sync.applyDay(date, day),
+    add: (date) => openDialog(date, null),
+    edit: (date, key, exercise) => openDialog(date, { date, key, exercise }),
+    openProgress: (name) => {
+      if (!progressTab) return;
+      progressTab.select(name);
+      selectTab("progress");
+    },
+  };
+}
+
+function openDialog(date, existing) {
+  // navigator.onLine is only trustworthy when it says no, which is the case
+  // worth catching: filling the dialog in and losing it at Save.
+  if (navigator.onLine === false) return toast("You're offline. Logging needs a connection.");
+  openEditor({
+    host: $("#dialogs"),
+    days: (sync && sync.days()) || [],
+    today: todayISO(),
+    date: date || todayISO(),
+    existing,
+    api,
+    actions: {
+      applied: (on, body) => { if (sync && body && "day" in body) sync.applyDay(on, body.day); },
+      // A move changes two days, so every path ends with a refresh.
+      done: (on) => {
+        if (dayTab) dayTab.select(on);
+        selectTab("day");
+        if (sync) sync.refresh();
+      },
+    },
+  });
 }
 
 // ------------------------------------------------------------- chrome
@@ -213,6 +327,10 @@ function wireTabs() {
     });
   });
   select(tabs.find((t) => `#${t.dataset.tab}` === location.hash) || tabs[0]);
+  selectTab = (name) => {
+    const tab = tabs.find((t) => t.dataset.tab === name);
+    if (tab) select(tab);
+  };
 }
 
 function closeMenu() {
@@ -239,6 +357,19 @@ function wireAccountMenu() {
   });
   $("#signout").addEventListener("click", () => signOut(false));
   $("#signout-all").addEventListener("click", () => signOut(true));
+}
+
+function wireExport() {
+  $("#export").addEventListener("click", async () => {
+    const days = (sync && sync.days()) || [];
+    try {
+      const result = await exportCsv(days, todayISO());
+      if (result.empty) toast("Nothing logged yet, so there is nothing to export.");
+      else if (result.downloaded) toast("Exported your log as CSV.");
+    } catch {
+      toast("Couldn't build the export. Try again.");
+    }
+  });
 }
 
 function wireRefresh() {

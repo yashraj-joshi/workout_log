@@ -98,7 +98,12 @@ def assistant(repo):
         return users[request.headers["x-test-sub"]]
 
     def make(sub: str = "user-1", email: str = "yash@example.com",
-             groups: tuple[str, ...] = ("ai-users",), summarizer=None) -> TestClient:
+             groups: tuple[str, ...] = ("ai-users",), summarizer=None,
+             script=None, transcript=None, agent=None,
+             reply="Done.", assumptions=(), question=None) -> TestClient:
+        """`script` is what the model decides to do, as a list of
+        (tool_name, arguments) followed by the reply it ends on; see
+        `scripted`. `transcript` stands in for speech-to-text."""
         def fake(facts_text: str) -> str:
             calls.append(facts_text)
             return "Walked and carried. 2 exercises, 2 sets."
@@ -108,12 +113,42 @@ def assistant(repo):
         assistant_app.app.dependency_overrides[assistant_app.get_repo] = lambda: repo
         assistant_app.app.dependency_overrides[assistant_app.get_summarizer] = \
             lambda: (summarizer or fake)
+        if transcript is not None:
+            assistant_app.app.dependency_overrides[assistant_app.get_transcriber] = \
+                lambda: (lambda audio, mime, names: (transcript, 4.0))
+        if script is not None or agent is not None:
+            assistant_app.app.dependency_overrides[assistant_app.get_agent] = \
+                lambda: (agent or scripted(*script, reply=reply,
+                                           assumptions=assumptions, question=question))
         return TestClient(assistant_app.app, headers={"X-Test-Sub": sub},
                           raise_server_exceptions=False)
 
     make.calls = calls
     yield make
     assistant_app.app.dependency_overrides.clear()
+
+
+def scripted(*steps, reply="Done.", assumptions=(), question=None):
+    """A stand-in for the model.
+
+    Each step is (tool_name, arguments). They run against the real Session, so
+    the tools, service.py, the models and DynamoDB are all genuinely exercised;
+    only the decision of what to call is scripted. `results` collects what each
+    tool answered, which is what the model would have seen.
+    """
+    import json
+
+    def run(*, session, context, said, create=None):
+        run.context = context
+        run.said = said
+        run.results = [json.loads(session.run(name, json.dumps(args))) for name, args in steps]
+        return {"reply": reply, "assumptions": list(assumptions), "question": question,
+                "modelCalls": len(steps) + 1, "inputTokens": 1200, "outputTokens": 80}
+
+    run.results = []
+    run.context = ""
+    run.said = ""
+    return run
 
 
 @pytest.fixture

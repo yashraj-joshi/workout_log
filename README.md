@@ -7,9 +7,9 @@ It replaces a Claude artifact of the same name with a real app: the same
 screens and rules, but the data lives in your own AWS account, the app installs
 to an iPhone home screen, and the assistant runs on your own OpenAI key.
 
-**Status:** phase 3 of 7 complete (backend on AWS; the web app signs in,
-syncs, installs to the home screen and opens offline). See
-[Build phases](#build-phases).
+**Status:** all 7 phases complete. Sign-in, the Day tab, Trends, Progress,
+Export CSV, voice logging, "Done for today", and an importer for the old log.
+Follow the docs in order to deploy it. See [Build phases](#build-phases).
 
 ---
 
@@ -79,19 +79,30 @@ backend/
     auth.py                 JWT claims -> User
     sessions.py             the refresh-token cookie: /v1/auth/*
     errors.py               the {"error": {...}} envelope
+    idempotency.py          a write runs at most once per Idempotency-Key
     api_app.py              ApiFunction  (no OpenAI access)
     assistant_app.py        AssistantFunction (the only OpenAI caller)
     summary.py              facts for "Done for today", computed in code
     export_csv.py           CSV, twin of web/js/csv.js
     assistant/              OpenAI client, prompts, summarizer
+      agent.py              the assistant loop: context in, tool calls out
+      tools.py              what the model may do, all through service.py
+      transcribe.py         speech to text, primed with your exercise names
+      metrics.py            tokens, audio seconds and dollars, as an EMF line
   tests/
 web/                        static app: no build step, no runtime npm deps
   index.html, css/app.css   the shell: header, status line, tabs
   js/                       app, session (tokens in memory), api, sync, store
+  js/logic.js               workout rules - twin of backend logic.py
+  js/views/day.js           the Day tab; views/editor.js the Add/Edit dialog
+  js/views/trends.js        Trends; views/progress.js the top-set chart
+  js/csv.js                 Export CSV, twin of backend export_csv.py
+  js/voice.js               the mic, the recorder and the result card
   sw.js                     service worker: caches the shell, never /v1/*
   vendor/                   amazon-cognito-identity-js, pinned
   tests/                    node --test, no dependencies
 scripts/                    deploy, users, keys, smoke test, secret scan
+  import_legacy.py          brings the old log in, from JSON or the old CSV
 docs/                       follow these in order
 ```
 
@@ -130,7 +141,7 @@ make check-secrets
 `make test` runs the backend tests, then the frontend tests.
 Run `make check-secrets` before every commit.
 
-Expected: `198 passed` for the backend, `fail 0` for the frontend, then
+Expected: `275 passed` for the backend, `# fail 0` for the frontend, then
 `check-secrets: OK`.
 
 To deploy, follow docs 02 to 06; the short version is `make deploy`,
@@ -143,7 +154,7 @@ To deploy, follow docs 02 to 06; the short version is `make deploy`,
 | 1 | Backend core, local only | **done** |
 | 2 | AWS: SAM template, scripts, deploy | **done** |
 | 3 | Web foundation: shell, sign-in, PWA | **done** |
-| 4 | Day tab | next |
-| 5 | Trends, Progress, Export CSV | |
-| 6 | AI: assistant, voice UI, Done for today | |
-| 7 | Migration, docs, parity checklist | |
+| 4 | Day tab | **done** |
+| 5 | Trends, Progress, Export CSV | **done** |
+| 6 | AI: assistant, voice UI, Done for today | **done** |
+| 7 | Migration, docs, parity checklist | **done** |

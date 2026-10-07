@@ -6,13 +6,10 @@ cannot leak it. The AI routes live in assistant_app.py on a separate function.
 
 from __future__ import annotations
 
-import hashlib
 import json
 import logging
 import os
-import re
 import time
-from typing import Callable
 
 from fastapi import Depends, FastAPI, Header, Path, Query, Request, Response
 from fastapi.responses import JSONResponse
@@ -21,8 +18,9 @@ from mangum import Mangum
 from . import errors, service, sessions
 from .auth import User, current_user, git_commit
 from .errors import ApiError
+from .idempotency import idempotency_key, run_once, valid_uuid
 from .models import DayPatch, ExerciseIn, MoveIn, valid_date, valid_key
-from .repo import MAX_PAGE, Repo, RequestRecord, RequestReplayed
+from .repo import MAX_PAGE, Repo
 
 log = logging.getLogger("workoutlog")
 logging.getLogger().setLevel(os.environ.get("LOG_LEVEL", "INFO"))
@@ -56,55 +54,6 @@ def exercise_key(key: str = Path(..., min_length=2, max_length=2)) -> str:
         raise ApiError(400, "validation_error", str(exc)) from exc
 
 
-_UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
-
-
-def _valid_uuid(value: str, what: str) -> str:
-    if not _UUID_RE.match(value):
-        raise ApiError(400, "validation_error", f"{what} should be a UUID.")
-    return value.lower()
-
-
-def idempotency_key(
-    value: str | None = Header(default=None, alias="Idempotency-Key", max_length=64),
-) -> str | None:
-    """Optional. The app creates one per action and sends it unchanged on every
-    retry of that action, so a reply lost on a weak connection can't log twice."""
-    return None if value is None else _valid_uuid(value.strip(), "Idempotency-Key")
-
-
-def _request_hash(request: Request, body) -> str:
-    """What was asked, so a key reused for a different request is caught. The
-    validated body, not the raw bytes: key order and spacing don't matter."""
-    canonical = json.dumps(body.model_dump(mode="json"), sort_keys=True, separators=(",", ":"))
-    return hashlib.sha256(f"{request.method} {request.url.path}\n{canonical}".encode()).hexdigest()
-
-
-def _replay(stored: dict, request_hash: str) -> JSONResponse:
-    if stored.get("requestHash") != request_hash:
-        raise ApiError(422, "idempotency_key_reused",
-                       "That Idempotency-Key was already used for a different request.")
-    if stored.get("status") != "done":
-        raise ApiError(409, "request_in_progress", "That request is still running.",
-                       headers={"Retry-After": "2"})
-    return JSONResponse(content=stored.get("response") or {}, status_code=int(stored["httpStatus"]))
-
-
-def _idempotent(repo: Repo, sub: str, key: str | None, request: Request, body, status: int,
-                run: Callable[[RequestRecord | None], dict]):
-    """Run a single-transaction write at most once per Idempotency-Key. A
-    repeat gets the first response back: no write, no dataVersion bump."""
-    if key is None:
-        return run(None)
-    record = RequestRecord(key, _request_hash(request, body), status)
-    stored = repo.get_request(sub, key)
-    if stored:
-        return _replay(stored, record.request_hash)
-    try:
-        return run(record)
-    except RequestReplayed:
-        # Another copy of this request committed between our check and our write.
-        return _replay(repo.get_request(sub, key) or {}, record.request_hash)
 
 
 @app.middleware("http")
@@ -189,7 +138,7 @@ def patch_day(patch: DayPatch, date: str = Depends(day_date),
 def add_exercise(exercise: ExerciseIn, request: Request, date: str = Depends(day_date),
                  user: User = Depends(current_user), repo: Repo = Depends(get_repo),
                  key: str | None = Depends(idempotency_key)):
-    return _idempotent(repo, user.sub, key, request, exercise, 201, lambda record: {
+    return run_once(repo, user.sub, key, request, exercise, 201, lambda record: {
         "day": service.add_exercise(repo, user.sub, date, exercise, request=record)})
 
 
@@ -211,7 +160,7 @@ def move_exercise(body: MoveIn, request: Request, date: str = Depends(day_date),
                   key: str = Depends(exercise_key), user: User = Depends(current_user),
                   repo: Repo = Depends(get_repo),
                   idem_key: str | None = Depends(idempotency_key)):
-    return _idempotent(repo, user.sub, idem_key, request, body, 200, lambda record: {
+    return run_once(repo, user.sub, idem_key, request, body, 200, lambda record: {
         "day": service.move_exercise(repo, user.sub, date, key, body.toDate, request=record)})
 
 
@@ -220,7 +169,7 @@ def read_request(key: str = Path(..., min_length=36, max_length=36),
                  user: User = Depends(current_user), repo: Repo = Depends(get_repo)):
     """A few bytes, so after a dropped upload the app can ask whether the
     server already has the request before sending it again."""
-    stored = repo.get_request(user.sub, _valid_uuid(key, "Request key"))
+    stored = repo.get_request(user.sub, valid_uuid(key, "Request key"))
     if stored is None:
         raise ApiError(404, "not_found", "No request with that key.")
     return {"state": stored.get("status")}

@@ -39,6 +39,16 @@ export function createStore(storage = globalThis.localStorage) {
 
   return {
     clear,
+    // Small UI choices that should survive a reload: which Trends range I
+    // last looked at, which exercise Progress was showing. Not per user:
+    // they are preferences, not data, and clear() wipes them with the rest.
+    pref: (key, fallback = null) => {
+      const prefs = read("prefs") || {};
+      return key in prefs ? prefs[key] : fallback;
+    },
+    setPref(key, value) {
+      write("prefs", { ...(read("prefs") || {}), [key]: value });
+    },
     // {sub, email} of whoever last signed in here, for opening offline.
     lastUser: () => read("user"),
     setUser(user) {

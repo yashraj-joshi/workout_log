@@ -10,6 +10,7 @@ from __future__ import annotations
 import uuid
 
 import pytest
+from workoutlog.idempotency import stored_response
 
 DATE = "2026-09-25"
 PLANK = {"exercise": "Plank", "sets": [{"seconds": 30}]}
@@ -86,7 +87,7 @@ def test_one_users_key_never_replays_another_users_request(api, repo):
     response = _add(api("user-2"), key)
     assert response.status_code == 201
     assert repo.get_day("user-2", DATE) is not None
-    assert repo.get_request("user-2", key)["response"]["day"]["date"] == DATE
+    assert stored_response(repo.get_request("user-2", key))["day"]["date"] == DATE
 
 
 def test_a_move_retry_moves_once(api, repo):

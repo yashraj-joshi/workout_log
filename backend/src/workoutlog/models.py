@@ -201,6 +201,65 @@ class MoveIn(BaseModel):
         return valid_date(value)
 
 
+MAX_TEXT = 500
+MAX_AUDIO_BYTES = 2 * 1024 * 1024
+AUDIO_TYPES = ("audio/mp4", "audio/webm")
+
+
+class AssistantIn(BaseModel):
+    """One voice or typed turn. Either audio or text, never both and never
+    neither: the route has nothing to send to the model otherwise."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    audioBase64: str | None = None
+    audioMimeType: str | None = None
+    text: str | None = Field(default=None, max_length=MAX_TEXT)
+    date: DateStr
+    today: DateStr
+    timezone: str = Field(default="UTC", max_length=64)
+
+    @field_validator("date", "today")
+    @classmethod
+    def _dates(cls, value: str) -> str:
+        return valid_date(value)
+
+    @model_validator(mode="after")
+    def _one_input(self) -> "AssistantIn":
+        said = (self.text or "").strip()
+        if said:
+            object.__setattr__(self, "text", said)
+        if bool(self.audioBase64) == bool(said):
+            raise ValueError("send either audio or text")
+        if self.audioBase64:
+            mime = (self.audioMimeType or "").split(";")[0].strip().lower()
+            if mime not in AUDIO_TYPES:
+                raise ValueError("audioMimeType should be audio/mp4 or audio/webm")
+            object.__setattr__(self, "audioMimeType", mime)
+        return self
+
+    def audio(self) -> bytes:
+        """Decoded once, here, so the size limit is enforced on real bytes
+        rather than on the base64 text that carries them."""
+        import base64
+        import binascii
+        try:
+            raw = base64.b64decode(self.audioBase64 or "", validate=True)
+        except (binascii.Error, ValueError) as exc:
+            raise ValueError("audioBase64 is not valid base64") from exc
+        if not raw:
+            raise ValueError("the recording was empty")
+        if len(raw) > MAX_AUDIO_BYTES:
+            raise ValueError("that recording is too long. Keep it under 60 seconds")
+        return raw
+
+
+class UndoIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    undoToken: str = Field(min_length=1, max_length=120)
+
+
 class FinishIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

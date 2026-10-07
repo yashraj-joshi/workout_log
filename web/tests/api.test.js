@@ -139,3 +139,41 @@ test("errors read our envelope, and API Gateway's own shape", () => {
   assert.equal(gateway.code, "unauthorized");
   assert.equal(errorFrom(502, null).code, "server_error");
 });
+
+test("the assistant carries the key it was given, unchanged, on every try", async () => {
+  const fetchImpl = fakeFetch(
+    { status: 200, body: { reply: "Logged it.", changedDates: [], days: [] } },
+    { status: 200, body: { reply: "Logged it.", changedDates: [], days: [] } },
+  );
+  const api = createApi({ fetch: fetchImpl, session: fakeSession() });
+  const key = "11111111-2222-3333-4444-555555555555";
+
+  await api.assistant({ text: "seated row", date: "2026-10-07", today: "2026-10-07" }, key);
+  await api.assistant({ text: "seated row", date: "2026-10-07", today: "2026-10-07" }, key);
+
+  assert.equal(fetchImpl.calls[0].headers["Idempotency-Key"], key);
+  assert.equal(fetchImpl.calls[1].headers["Idempotency-Key"], key,
+    "the same recording keeps its key, so the server replays instead of logging twice");
+});
+
+test("a lost assistant reply is not retried behind your back", async () => {
+  // One network failure, and that is the end of it: a silent retry could pay
+  // for a second model call and log a second set.
+  const fetchImpl = fakeFetch(new TypeError("network"));
+  const api = createApi({ fetch: fetchImpl, session: fakeSession(), sleep: async () => {} });
+
+  await assert.rejects(() => api.assistant({ text: "x", date: "2026-10-07", today: "2026-10-07" }, "k"),
+    (err) => err.status === 0);
+  assert.equal(fetchImpl.calls.length, 1);
+});
+
+test("asking about a turn says whether the server already has it", async () => {
+  const api = (...replies) => createApi({ fetch: fakeFetch(...replies), session: fakeSession() });
+
+  assert.equal(await api({ status: 200, body: { state: "done" } }).requestState("k"), "done");
+  assert.equal(await api({ status: 200, body: { state: "in_progress" } }).requestState("k"), "in_progress");
+  // Never sent, so it is safe to send now.
+  assert.equal(await api({ status: 404, body: { error: { code: "not_found" } } }).requestState("k"), null);
+  // Could not tell: treated as unknown rather than as "safe to resend".
+  assert.equal(await api(new TypeError("network")).requestState("k"), "unknown");
+});
