@@ -50,8 +50,24 @@ export function createSync({ api, store, onData = () => {}, onStatus = () => {} 
     return running;
   }
 
+  // A write already told us what that day now looks like, so the screen can
+  // update before the refresh lands. `day` of null means the write emptied the
+  // day and the server deleted it. The stored ETag is deliberately left alone:
+  // the server's dataVersion has moved on, so the next refresh fetches and has
+  // the last word.
+  function applyDay(date, day) {
+    if (!state) state = { etag: null, days: [], savedAt: null };
+    const days = state.days.filter((d) => d.date !== date);
+    if (day) days.push(day);
+    days.sort((a, b) => (a.date > b.date ? -1 : a.date < b.date ? 1 : 0));
+    state = { ...state, days, savedAt: new Date().toISOString() };
+    store.save(state);
+    onData(state.days);
+  }
+
   return {
     refresh,
+    applyDay,
     days: () => (state ? state.days : null),
     savedAt: () => (state ? state.savedAt : null),
   };

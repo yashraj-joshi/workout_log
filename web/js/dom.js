@@ -11,6 +11,10 @@ export function h(tag, attrs = {}, ...children) {
       el.className = value;
     } else if (name === "dataset") {
       Object.assign(el.dataset, value);
+    } else if (name === "style" && typeof value === "object") {
+      // Through the CSSOM, not a style attribute: the CSP is style-src 'self'
+      // with no 'unsafe-inline', so a style="..." attribute would be dropped.
+      for (const [prop, setting] of Object.entries(value)) el.style.setProperty(prop, setting);
     } else {
       el.setAttribute(name, value === true ? "" : String(value));
     }

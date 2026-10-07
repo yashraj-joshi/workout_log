@@ -58,11 +58,7 @@
 
     <div id="app-body" hidden>
       <section class="panel" id="panel-day" role="tabpanel" aria-labelledby="tab-day" tabindex="0">
-        <div class="card">
-          <h2 class="section-title">Your log</h2>
-          <div id="log-summary"></div>
-        </div>
-        <p class="meta coming">The calendar, exercises and day summary arrive with the Day tab.</p>
+        <div id="day-tab"></div>
       </section>
       <section class="panel" id="panel-trends" role="tabpanel" aria-labelledby="tab-trends" tabindex="0" hidden>
         <div class="card">
@@ -78,6 +74,9 @@
       </section>
     </div>
   </main>
+
+  <!-- The Add / Edit dialog is appended here while it is open. -->
+  <div id="dialogs"></div>
 
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 </body>

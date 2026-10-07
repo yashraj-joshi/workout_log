@@ -66,6 +66,7 @@ def test_formatting():
     for c in cases["dates"]:
         assert L.fmt_date_long(c["date"], c["today"]) == c["long"]
         assert L.fmt_date_short(c["date"], c["today"]) == c["short"]
+        assert L.fmt_month(c["date"]) == c["month"]
     for c in cases["changes"]:
         assert L.change_label(c["current"], c["previous"]) == c["out"]
 

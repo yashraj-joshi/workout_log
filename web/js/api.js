@@ -104,11 +104,29 @@ export function createApi({ fetch: fetchImpl, session, sleep = wait, newKey = ()
     }
   }
 
+  // The day routes answer {"day": {...}}, or {"day": null} when the write
+  // emptied the day and the server deleted it. A write whose reply was lost
+  // and then retried can come back with no body at all, so callers refresh
+  // after every write rather than trusting what they get here.
+  const body = async (promise) => (await promise).data;
+  const day = (date) => `/v1/days/${encodeURIComponent(date)}`;
+  const exercise = (date, key) => `${day(date)}/exercises/${encodeURIComponent(key)}`;
+
   return {
     request,
     me: async () => (await request("GET", "/v1/me")).data,
     // 304 when the log hasn't changed since `etag`; then data is null.
     listDays: ({ etag, cursor } = {}) =>
       request("GET", cursor ? `/v1/days?cursor=${encodeURIComponent(cursor)}` : "/v1/days", { etag }),
+    readDay: (date) => body(request("GET", day(date))),
+    // place, notes, bodyweight and summary. null removes a field.
+    patchDay: (date, patch) => body(request("PATCH", day(date), { body: patch })),
+    // The server assigns the order and loggedAt, so a repeat of this one would
+    // add a second copy: it carries an Idempotency-Key.
+    addExercise: (date, item) => body(request("POST", `${day(date)}/exercises`, { body: item, idempotent: true })),
+    putExercise: (date, key, item) => body(request("PUT", exercise(date, key), { body: item })),
+    removeExercise: (date, key) => body(request("DELETE", exercise(date, key))),
+    moveExercise: (date, key, toDate) =>
+      body(request("POST", `${exercise(date, key)}/move`, { body: { toDate }, idempotent: true })),
   };
 }

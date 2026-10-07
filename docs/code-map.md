@@ -216,7 +216,7 @@ wrong, or you are changing how something is stored.
 ### `logic.py` - workout rules
 
 Pure functions over plain dicts, with no I/O. Each has a line-for-line twin in
-`web/js/logic.js` (phase 4). If you change one, change the other and add a
+`web/js/logic.js`. If you change one, change the other and add a
 case to `shared/fixtures/`.
 
 | Section | Functions |
@@ -309,6 +309,11 @@ browser runs. `deploy-web.sh` uploads them (docs/06).
 | `js/sync.js` | Loads the whole log with the ETag; 304 when nothing changed | The log doesn't update, or updates too often |
 | `js/store.js` | The offline copy of the log in `localStorage`, per user. The only file that touches browser storage | Offline start, a second person on the same device |
 | `js/cognito.js` | SRP sign-in, first password, forgot password, via the vendored library. Turns Cognito errors into plain messages | Sign-in errors |
+| `js/logic.js` | The workout rules: name lookup, compact lines, top sets, per-muscle tallies, the place guess, date and number formatting. Twin of `backend/src/workoutlog/logic.py`; `shared/fixtures/` runs against both | A number or a label that disagrees with the backend |
+| `js/catalog.js` | Loads `exercise_catalog.json` once at boot, so `lookup()` is synchronous everywhere else | Unknown muscles, an area that won't fill itself in |
+| `js/parse.js` | What the Add/Edit dialog does with typed input: reps ranges (`10-12`, `10 to 12`), numbers and their limits, muscle names, and the exact error wording | A set that won't save, or a wrong error message |
+| `js/views/day.js` | The Day tab: calendar, day header, the gym/home switch, stat tiles, the editable summary, notes and bodyweight, sets per muscle, exercise cards, the example day | Anything on the Day tab |
+| `js/views/editor.js` | The Add / Edit exercise dialog: suggestions, "Same as last time", the Weights/Time/Hold switch, set rows, saving, moving and removing | Adding or editing an exercise |
 | `js/views/signin.js` | The sign-in screen and its three side steps | The sign-in forms |
 | `js/dom.js` | `h()` builds elements with text nodes only, so user text can't become markup. `toast()` | Rendering helpers |
 | `sw.js` | Caches the app shell; never `/v1/*` or `/health`. `VERSION` is stamped with the commit at deploy | A stale app after a deploy |
@@ -440,8 +445,7 @@ Other files already mention these paths, so here is when each arrives.
 
 | Path | Phase |
 | --- | --- |
-| `web/js/logic.js`, `web/js/views/day.js`, the logic fixture tests | 4 |
-| `web/js/csv.js` | 5 |
+| `web/js/csv.js`, the Trends and Progress tabs | 5 |
 | `/v1/assistant`, `/v1/assistant/undo` | 6 |
 | Import of the old log | 7 |
 | `docs/07` to `docs/09` | As each phase lands |
