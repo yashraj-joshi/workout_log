@@ -115,10 +115,14 @@ chosen. Read it when you want the reasoning rather than the steps.
 ## Running the tests now
 
 ```bash
-make venv          # once: creates .venv and installs dependencies
-make test          # backend tests, and frontend tests once they exist
-make check-secrets # before every commit
+make venv
+make test
+make check-secrets
 ```
+
+`make venv` is needed once: it creates `.venv` and installs the dependencies.
+`make test` runs the backend tests, and the frontend tests once they exist.
+Run `make check-secrets` before every commit.
 
 Expected: `198 passed`, then `check-secrets: OK`.
 

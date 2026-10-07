@@ -29,21 +29,22 @@ for every step. The examples use `us-east-1`.
 
 ---
 
-## 3. A day-to-day login: IAM Identity Center
+## 3. A day-to-day login: an IAM user
 
-IAM Identity Center gives you a login with temporary credentials. They expire
-on their own, so there are no long-lived keys on your laptop to leak.
+An IAM user with an access key is the deploy login. The key doesn't expire on
+its own, so treat it like a password: it lives only in `~/.aws/credentials`,
+never in this repo, and you rotate it.
 
-1. Console -> search **IAM Identity Center** -> **Enable**. Accept the
-   organization it creates.
-2. **Users** -> **Add user**. Use your own email. Accept the invite email and
-   set a password and MFA.
-3. **Permission sets** -> **Create permission set** -> **Predefined** ->
-   `AdministratorAccess`. Session duration: 8 hours.
-4. **AWS accounts** -> tick your account -> **Assign users or groups** -> your
-   user -> the `AdministratorAccess` permission set.
-5. On the IAM Identity Center **Dashboard**, copy the **AWS access portal
-   URL** (`https://d-xxxxxxxxxx.awsapps.com/start`).
+1. Console -> search **IAM** -> **Users** -> **Create user**. Name it, e.g.
+   `workout-log-admin`. Tick **Provide user access to the AWS Management
+   Console** only if you want to sign in as this user in the browser.
+2. **Permissions options** -> **Attach policies directly** ->
+   `AdministratorAccess` -> **Create user**.
+3. Open the user -> **Security credentials** -> **Assign MFA device**. This
+   protects the console login; it does not protect the access key.
+4. Same tab -> **Access keys** -> **Create access key** -> **Command Line
+   Interface (CLI)** -> tick the confirmation -> **Create**. Keep the page open
+   for the next section: the secret is shown once.
 
 `AdministratorAccess` is broad. It's what you use to *deploy*. The app's own
 Lambda functions get narrow, per-function permissions from the template, and
@@ -53,24 +54,26 @@ that is the boundary that matters at runtime.
 
 ## 4. Connect the CLI
 
+Store the key in a named profile. The CLI writes it to `~/.aws/credentials`,
+outside the repo, where the AWS CLI and SAM CLI both find it without help.
+
 ```bash
-aws configure sso
+aws configure --profile workout-log
 ```
 
 Answer the prompts:
 
 | Prompt | Answer |
 | --- | --- |
-| SSO session name | `workout-log` |
-| SSO start URL | the access portal URL from section 3 |
-| SSO region | the region where Identity Center is enabled |
-| SSO registration scopes | press Enter |
-| (browser opens) | approve |
-| CLI default client Region | your region from section 2 |
-| CLI default output format | `json` |
-| CLI profile name | `workout-log` |
+| AWS Access Key ID | the access key from section 3 (`AKIA...`) |
+| AWS Secret Access Key | the secret from section 3 |
+| Default region name | your region from section 2 |
+| Default output format | `json` |
 
-Make it the default for this terminal, and for new ones:
+Now close the key page in the console. If you lost the secret before pasting
+it, deactivate that key and create a new one.
+
+Make the profile the default for this terminal, and for new ones:
 
 ```bash
 echo 'export AWS_PROFILE=workout-log' >> ~/.zprofile
@@ -82,23 +85,31 @@ Expected, with your numbers:
 
 ```json
 {
-    "UserId": "AROA...:you@example.com",
+    "UserId": "AIDA...",
     "Account": "123456789012",
-    "Arn": "arn:aws:sts::123456789012:assumed-role/AWSReservedSSO_AdministratorAccess_.../you@example.com"
+    "Arn": "arn:aws:iam::123456789012:user/workout-log-admin"
 }
 ```
 
-When the session expires (after 8 hours), commands fail with a token error.
-Run `aws sso login` and carry on.
+Don't put the key in a `.env` file, a script, or an environment variable in
+`~/.zprofile`. `AWS_PROFILE` names the profile; it isn't the key. Anything in
+the project folder can be committed, pasted, or read by tools working in the
+repo. `make check-secrets` catches `AKIA...` in tracked files, but only after
+you've written it there.
+
+**Rotating the key.** Every 90 days, or at once if it may have leaked: create
+a second access key on the user, run `aws configure --profile workout-log` and
+paste the new one, check `aws sts get-caller-identity`, then deactivate and
+delete the old key in the console.
 
 **Common errors**
 
 | What you see | Fix |
 | --- | --- |
-| `Unable to locate credentials` | `export AWS_PROFILE=workout-log`, then `aws sso login` |
-| `Error when retrieving token from sso: Token has expired` | `aws sso login` |
-| `The SSO session associated with this profile has expired` | Same: `aws sso login` |
-| `AccessDenied` on everything | The permission set isn't assigned to the account (section 3, step 4) |
+| `Unable to locate credentials` | `export AWS_PROFILE=workout-log`. If that's set, the profile is missing: `aws configure list-profiles`, then redo this section |
+| `The config profile (workout-log) could not be found` | Redo `aws configure --profile workout-log` |
+| `InvalidClientTokenId` or `SignatureDoesNotMatch` | The key or secret was mistyped, or the key was deactivated. Create a new key and reconfigure |
+| `AccessDenied` on everything | `AdministratorAccess` isn't attached to the user (section 3, step 2) |
 
 ---
 
@@ -107,9 +118,11 @@ Run `aws sso login` and carry on.
 Expected spend is well under $1 a month. The alarm is there for when something
 goes wrong: a bug in a loop, or a leaked credential.
 
+Set `EMAIL` to the address the alert should go to:
+
 ```bash
 ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
-EMAIL=you@example.com     # where the alert goes
+EMAIL=you@example.com
 
 aws budgets create-budget --account-id "$ACCOUNT" \
   --budget '{"BudgetName":"workout-log-5usd","BudgetLimit":{"Amount":"5","Unit":"USD"},"TimeUnit":"MONTHLY","BudgetType":"COST"}' \
