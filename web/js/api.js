@@ -6,6 +6,9 @@
 //   an Idempotency-Key, so a retry after a lost reply can't log a set twice.
 
 export const TIMEOUT_MS = 10_000;
+// The assistant transcribes and then runs the model, and gives itself 25 s to
+// do it. Waiting less here would abandon a turn that is about to succeed.
+export const ASSISTANT_TIMEOUT_MS = 30_000;
 const RETRY_DELAYS_MS = [600, 1800];
 const RETRYABLE = new Set([0, 503, 504]);
 
@@ -69,18 +72,18 @@ export async function send(fetchImpl, path, { method = "GET", headers = {}, body
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export function createApi({ fetch: fetchImpl, session, sleep = wait, newKey = () => crypto.randomUUID() }) {
-  async function once(method, path, { body, etag, key }) {
+  async function once(method, path, { body, etag, key, timeoutMs }) {
     const token = await session.accessToken();
     const headers = { Authorization: `Bearer ${token}` };
     if (body !== undefined) headers["Content-Type"] = "application/json";
     if (etag) headers["If-None-Match"] = etag;
     if (key) headers["Idempotency-Key"] = key;
-    let res = await send(fetchImpl, path, { method, headers, body });
+    let res = await send(fetchImpl, path, { method, headers, body, timeoutMs });
     if (res.status === 401) {
       // `stale` lets ten calls that all hit 401 share one refresh.
       await session.refresh({ stale: token });
       headers.Authorization = `Bearer ${await session.accessToken()}`;
-      res = await send(fetchImpl, path, { method, headers, body });
+      res = await send(fetchImpl, path, { method, headers, body, timeoutMs });
     }
     if (res.status >= 400) throw errorFrom(res.status, res.data);
     return res;
@@ -88,13 +91,13 @@ export function createApi({ fetch: fetchImpl, session, sleep = wait, newKey = ()
 
   // idempotent: true makes one key for this action and sends the same key on
   // every retry of it. A new call is a new action and gets a new key.
-  async function request(method, path, { body, etag, idempotent = false } = {}) {
+  async function request(method, path, { body, etag, idempotent = false, timeoutMs } = {}) {
     const key = idempotent ? newKey() : null;
     const safeToRepeat = method === "GET" || method === "PUT" || method === "PATCH" || method === "DELETE";
     const retries = method !== "GET" && (key || safeToRepeat) ? RETRY_DELAYS_MS.length : 0;
     for (let attempt = 0; ; attempt++) {
       try {
-        return await once(method, path, { body, etag, key });
+        return await once(method, path, { body, etag, key, timeoutMs });
       } catch (err) {
         // The first DELETE may have landed before its reply was lost.
         if (attempt > 0 && method === "DELETE" && err.status === 404) return { status: 204, etag: null, data: null };
@@ -128,5 +131,17 @@ export function createApi({ fetch: fetchImpl, session, sleep = wait, newKey = ()
     removeExercise: (date, key) => body(request("DELETE", exercise(date, key))),
     moveExercise: (date, key, toDate) =>
       body(request("POST", `${exercise(date, key)}/move`, { body: { toDate }, idempotent: true })),
+
+    // The AI routes. None of them is retried: a repeat could log a second copy
+    // of the same set, and the assistant is not cheap enough to guess with.
+    assistant: (turn) =>
+      body(request("POST", "/v1/assistant", { body: turn, timeoutMs: ASSISTANT_TIMEOUT_MS })),
+    undoAssistant: (undoToken) =>
+      body(request("POST", "/v1/assistant/undo", { body: { undoToken } })),
+    // Conditional on the server, so a second press gets 409 rather than a
+    // second summary.
+    finishDay: (date, notes) =>
+      body(request("POST", `${day(date)}/finish`, { body: notes ? { notes } : {},
+                                                    timeoutMs: ASSISTANT_TIMEOUT_MS })),
   };
 }

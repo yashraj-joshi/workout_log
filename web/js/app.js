@@ -12,6 +12,7 @@ import { loadCatalog } from "./catalog.js";
 import { createSession } from "./session.js";
 import { createStore } from "./store.js";
 import { createSync, POLL_MS } from "./sync.js";
+import { createVoice } from "./voice.js";
 import { exportCsv } from "./csv.js";
 import { createDayTab } from "./views/day.js";
 import { openEditor } from "./views/editor.js";
@@ -30,9 +31,12 @@ let user = null; // {sub, email, groups}
 let dayTab = null;
 let trendsTab = null;
 let progressTab = null;
+let voice = null;
 let pollTimer = null;
 let swRegistration = null;
 let selectTab = () => {};
+
+const canUseAI = () => Boolean(user && user.groups.some((g) => g === "ai-users" || g === "admins"));
 
 // The device's own calendar date. A day is local: logging at 11pm belongs to
 // that evening, not to tomorrow in UTC.
@@ -112,9 +116,10 @@ function enterSaved(last, status) {
 function startSync(sub) {
   sync = createSync({ api, store: store.forUser(sub), onData: renderLog, onStatus: setStatus });
   const today = todayISO();
-  dayTab = createDayTab({ root: $("#day-tab"), today, actions: dayActions() });
+  dayTab = createDayTab({ root: $("#day-tab"), today, actions: dayActions(), canUseAI: canUseAI() });
   trendsTab = createTrendsTab({ root: $("#trends-tab"), store, today, actions: { openDay: openDayOn } });
   progressTab = createProgressTab({ root: $("#progress-tab"), store, today, actions: { openDay: openDayOn } });
+  startVoice();
   renderLog(sync.days());
   clearInterval(pollTimer);
   pollTimer = setInterval(() => { if (document.visibilityState === "visible") tick(); }, POLL_MS);
@@ -163,6 +168,8 @@ function stop() {
   dayTab = null;
   trendsTab = null;
   progressTab = null;
+  if (voice) voice.destroy();
+  voice = null;
   replace($("#day-tab"));
   replace($("#trends-tab"));
   replace($("#progress-tab"));
@@ -219,6 +226,35 @@ function renderLog(days) {
   dayTab.update(days, today);
   trendsTab.update(days, today);
   progressTab.update(days, today);
+}
+
+// Voice is for accounts in ai-users or admins. The API enforces that on every
+// call; this only decides whether to offer the button.
+function startVoice() {
+  if (voice) voice.destroy();
+  voice = null;
+  if (!canUseAI()) return replace($("#voice"));
+  voice = createVoice({
+    host: $("#voice"),
+    api,
+    getDate: () => (dayTab ? dayTab.selected() : null),
+    getToday: todayISO,
+    actions: {
+      // A turn can touch more than one day, and can delete one.
+      applied: (result) => {
+        if (!sync) return;
+        for (const day of result.days || []) {
+          sync.applyDay(day.date, day.deleted ? null : day);
+        }
+        const [first] = result.changedDates || [];
+        if (first && dayTab) {
+          dayTab.select(first);
+          selectTab("day");
+        }
+        sync.refresh();
+      },
+    },
+  });
 }
 
 // The calendar heatmap and the Progress history both open a day this way.

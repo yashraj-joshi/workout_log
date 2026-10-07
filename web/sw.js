@@ -30,6 +30,7 @@ const SHELL = [
   "/js/parse.js",
   "/js/session.js",
   "/js/store.js",
+  "/js/voice.js",
   "/js/sync.js",
   "/js/views/day.js",
   "/js/views/editor.js",

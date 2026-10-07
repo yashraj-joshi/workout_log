@@ -317,6 +317,7 @@ browser runs. `deploy-web.sh` uploads them (docs/06).
 | `js/views/trends.js` | The Trends tab: the range window, the four tiles, the week-column heatmap, sets per muscle and the areas with no work | A trend number, or the heatmap |
 | `js/views/progress.js` | The Progress tab: the exercise picker, the inline-SVG top-set chart (axis ticks, scrubbing) and the session history | The chart, or a change label |
 | `js/csv.js` | Export CSV, built in the browser. Twin of `backend/src/workoutlog/export_csv.py`, checked against the same golden file | A column that is wrong or missing in the export |
+| `js/voice.js` | The mic button, the recorder (container, level meter, 60 s cap), the result card, Undo, and the wording of every voice error | Recording, or a message after a failed turn |
 | `js/views/signin.js` | The sign-in screen and its three side steps | The sign-in forms |
 | `js/dom.js` | `h()` builds elements with text nodes only, so user text can't become markup. `toast()` | Rendering helpers |
 | `sw.js` | Caches the app shell; never `/v1/*` or `/health`. `VERSION` is stamped with the commit at deploy | A stale app after a deploy |
@@ -448,7 +449,6 @@ Other files already mention these paths, so here is when each arrives.
 
 | Path | Phase |
 | --- | --- |
-| `/v1/assistant`, `/v1/assistant/undo` | 6 |
 | Import of the old log | 7 |
 | `docs/07` to `docs/09` | As each phase lands |
 

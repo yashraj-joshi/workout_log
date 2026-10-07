@@ -395,6 +395,21 @@ class Repo:
         ).get("Item")
         return from_dynamo(item) if item else None
 
+    def mark_turn_undone(self, sub: str, token: str) -> None:
+        """So the same token can't be spent twice. Conditional, so two undos
+        racing each other leave only one winner."""
+        try:
+            self.table.update_item(
+                Key={"PK": self.pk(sub), "SK": f"ASSIST#{token}"},
+                UpdateExpression="SET #u = :true",
+                ConditionExpression="attribute_exists(SK) AND attribute_not_exists(#u)",
+                ExpressionAttributeNames={"#u": "undone"},
+                ExpressionAttributeValues=to_dynamo({":true": True}),
+            )
+        except ClientError as exc:
+            if not _is_conditional_failure(exc):
+                raise
+
     def recent_turns(self, sub: str, date: str, limit: int = 3) -> list[dict]:
         """The last few turns for one date, so a bare "12 reps" can answer the
         question the assistant asked a moment ago."""

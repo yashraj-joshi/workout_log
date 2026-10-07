@@ -1028,3 +1028,116 @@ table.history .change { font-weight: 600; }
   font-size: inherit;
   font-variant-numeric: tabular-nums;
 }
+
+/* ============================================= Voice and the AI (phase 6) */
+
+/* The mic sits above the home bar on every tab, with the Type instead button
+   beside it so the same thing can be done without speaking. */
+.voice-bar {
+  position: fixed;
+  right: max(var(--gutter), env(safe-area-inset-right));
+  bottom: calc(20px + env(safe-area-inset-bottom));
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  z-index: 18;
+}
+
+.mic {
+  width: 64px;
+  height: 64px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 6px 18px rgb(0 0 0 / 0.22);
+}
+.mic.live { background: var(--bad); }
+
+.type-instead { background: var(--surface); box-shadow: 0 4px 12px rgb(0 0 0 / 0.14); }
+
+/* The card a turn comes back in, above the mic and inside the gutters. */
+.voice-panel {
+  position: fixed;
+  left: max(var(--gutter), env(safe-area-inset-left));
+  right: max(var(--gutter), env(safe-area-inset-right));
+  bottom: calc(96px + env(safe-area-inset-bottom));
+  margin: 0 auto;
+  max-width: 560px;
+  display: grid;
+  gap: 10px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: 0 10px 30px rgb(0 0 0 / 0.18);
+  z-index: 17;
+}
+
+.voice-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.rec {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* The ring grows with the level meter, so it is obvious the mic is hearing
+   something. --level is set from Web Audio; without it the ring just sits. */
+.rec-ring {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--bad);
+  flex-shrink: 0;
+  transform: scale(calc(1 + var(--level, 0) * 0.6));
+  box-shadow: 0 0 0 calc(var(--level, 0) * 10px) color-mix(in srgb, var(--bad) 25%, transparent);
+  transition: transform 80ms linear, box-shadow 80ms linear;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rec-ring { transition: none; }
+}
+
+.rec-time {
+  font-family: var(--font-display);
+  font-size: 24px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.rec-hint { font-size: 14px; color: var(--muted); }
+
+.transcript { font-style: italic; }
+.reply { font-size: 15px; }
+
+.assumptions {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.question {
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--accent-soft);
+  font-weight: 600;
+}
+
+.voice-type .box { background: var(--ground); }
+
+/* "Done for today", above the summary box while it is still available. */
+.finish {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+.finish .btn { justify-self: start; }

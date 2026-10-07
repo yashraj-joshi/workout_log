@@ -7,9 +7,9 @@ It replaces a Claude artifact of the same name with a real app: the same
 screens and rules, but the data lives in your own AWS account, the app installs
 to an iPhone home screen, and the assistant runs on your own OpenAI key.
 
-**Status:** phase 5 of 7 complete (backend on AWS; the web app signs in,
-syncs, installs to the home screen, opens offline, logs and edits a day, and
-shows trends, per-exercise progress and a CSV export). See
+**Status:** phase 6 of 7 complete. Everything works: sign-in, the Day tab,
+Trends, Progress, Export CSV, voice logging and "Done for today". Phase 7 is
+the importer for the old log and the last three docs. See
 [Build phases](#build-phases).
 
 ---
@@ -85,6 +85,10 @@ backend/
     summary.py              facts for "Done for today", computed in code
     export_csv.py           CSV, twin of web/js/csv.js
     assistant/              OpenAI client, prompts, summarizer
+      agent.py              the assistant loop: context in, tool calls out
+      tools.py              what the model may do, all through service.py
+      transcribe.py         speech to text, primed with your exercise names
+      metrics.py            tokens, audio seconds and dollars, as an EMF line
   tests/
 web/                        static app: no build step, no runtime npm deps
   index.html, css/app.css   the shell: header, status line, tabs
@@ -93,6 +97,7 @@ web/                        static app: no build step, no runtime npm deps
   js/views/day.js           the Day tab; views/editor.js the Add/Edit dialog
   js/views/trends.js        Trends; views/progress.js the top-set chart
   js/csv.js                 Export CSV, twin of backend export_csv.py
+  js/voice.js               the mic, the recorder and the result card
   sw.js                     service worker: caches the shell, never /v1/*
   vendor/                   amazon-cognito-identity-js, pinned
   tests/                    node --test, no dependencies
@@ -135,7 +140,7 @@ make check-secrets
 `make test` runs the backend tests, then the frontend tests.
 Run `make check-secrets` before every commit.
 
-Expected: `198 passed` for the backend, `# fail 0` for the frontend, then
+Expected: `247 passed` for the backend, `# fail 0` for the frontend, then
 `check-secrets: OK`.
 
 To deploy, follow docs 02 to 06; the short version is `make deploy`,
@@ -150,5 +155,5 @@ To deploy, follow docs 02 to 06; the short version is `make deploy`,
 | 3 | Web foundation: shell, sign-in, PWA | **done** |
 | 4 | Day tab | **done** |
 | 5 | Trends, Progress, Export CSV | **done** |
-| 6 | AI: assistant, voice UI, Done for today | next |
-| 7 | Migration, docs, parity checklist | |
+| 6 | AI: assistant, voice UI, Done for today | **done** |
+| 7 | Migration, docs, parity checklist | next |

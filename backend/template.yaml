@@ -31,6 +31,28 @@ Parameters:
   AssistantModel:
     Type: String
     Default: gpt-6-luna
+    Description: The model that logs and answers. gpt-6-sol costs about 20x as much.
+
+  TranscribeModel:
+    Type: String
+    Default: gpt-transcribe
+    Description: Speech to text for voice logging.
+
+  # These only feed the EstimatedCostUsd metric. Checked Sep 2026; see docs/09.
+  PriceInputPerMillion:
+    Type: String
+    Default: "0.10"
+    Description: USD per 1M input tokens, for the cost metric only.
+
+  PriceOutputPerMillion:
+    Type: String
+    Default: "0.50"
+    Description: USD per 1M output tokens, for the cost metric only.
+
+  PriceTranscribePerMinute:
+    Type: String
+    Default: "0.0045"
+    Description: USD per minute of audio, for the cost metric only.
 
 Globals:
   Function:
@@ -206,6 +228,12 @@ Resources:
           OPENAI_KEY_PARAM: !Ref OpenAIKeyParam
           OPENAI_TIMEOUT: "22"
           ASSISTANT_MODEL: !Ref AssistantModel
+          TRANSCRIBE_MODEL: !Ref TranscribeModel
+          # Used only to estimate the cost metric, in dollars. Update these
+          # when OpenAI's prices change; nothing else depends on them.
+          PRICE_INPUT_PER_M: !Ref PriceInputPerMillion
+          PRICE_OUTPUT_PER_M: !Ref PriceOutputPerMillion
+          PRICE_TRANSCRIBE_PER_MIN: !Ref PriceTranscribePerMinute
       Policies:
         - Statement:
             - Effect: Allow
@@ -222,6 +250,8 @@ Resources:
               Resource: !Sub arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter${OpenAIKeyParam}
       Events:
         Finish: { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Path: "/v1/days/{date}/finish", Method: POST } }
+        Assistant: { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Path: /v1/assistant, Method: POST } }
+        AssistantUndo: { Type: HttpApi, Properties: { ApiId: !Ref HttpApi, Path: /v1/assistant/undo, Method: POST } }
 
   ApiLogs:
     Type: AWS::Logs::LogGroup

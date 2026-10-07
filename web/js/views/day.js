@@ -47,12 +47,13 @@ function loggedRange(exercises) {
   return first === last ? `Logged ${first}` : `Logged ${first} ${L.EN_DASH} ${last}`;
 }
 
-export function createDayTab({ root, actions, today }) {
+export function createDayTab({ root, actions, today, canUseAI = false }) {
   let days = [];
   let selected = null;
   let month = null; // {year, month} on show in the calendar
   let drafts = {}; // field -> what I have typed but not saved
   let pendingRemove = null; // the exercise key showing "Remove this exercise?"
+  let finishing = false; // "Done for today" is running
 
   const byDate = () => new Map(days.map((d) => [d.date, d]));
   const dayFor = (date) => (date ? byDate().get(date) || null : null);
@@ -281,10 +282,40 @@ export function createDayTab({ root, actions, today }) {
       h("div", { class: "edit-foot" }, counter, button));
   }
 
+  // "Done for today" writes the summary once. The server decides when it is
+  // over, through summaryGeneratedAt, so a refresh from another device hides
+  // the button here too.
+  function finishBlock(day) {
+    if (!canUseAI || day.summaryGeneratedAt) return null;
+    if (finishing) return h("p", { class: "meta" }, "Writing summary…");
+    return h("div", { class: "finish" },
+      h("button", { class: "btn primary", type: "button", onclick: () => finish() }, "Done for today"),
+      h("p", { class: "meta" }, "Writes a short summary of this day. Runs once."));
+  }
+
+  async function finish() {
+    finishing = true;
+    render();
+    try {
+      const body = await actions.api.finishDay(selected);
+      if (body && body.day) actions.applyDay(selected, body.day);
+      toast("Summary written.");
+    } catch (err) {
+      // 409 means it was already written, which is the right answer, not an
+      // error: take the server's word for it and show what it has.
+      if (err.status !== 409) toast(err.status === 0 ? "You're offline. This needs a connection." : err.message);
+      actions.refresh();
+    } finally {
+      finishing = false;
+      render();
+    }
+  }
+
   function summaryCard(day) {
     const text = (value) => (String(value).trim() ? String(value).trim() : null);
     return h("div", { class: "card" },
       h("p", { class: "label" }, "Day summary"),
+      finishBlock(day),
       editable({
         field: "summary",
         id: "day-summary",
