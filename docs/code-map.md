@@ -307,13 +307,16 @@ browser runs. `deploy-web.sh` uploads them (docs/06).
 | `js/session.js` | Access and ID tokens, in memory only. `adopt` (after sign-in), `refresh` (one at a time), `signOut` | 401 loops, sign-out, "Your session ended" |
 | `js/api.js` | Every API call: 10 s deadline, one refresh-and-retry on 401, write retries, `Idempotency-Key`, the error shape | Timeouts, retries, error messages from the API |
 | `js/sync.js` | Loads the whole log with the ETag; 304 when nothing changed | The log doesn't update, or updates too often |
-| `js/store.js` | The offline copy of the log in `localStorage`, per user. The only file that touches browser storage | Offline start, a second person on the same device |
+| `js/store.js` | The offline copy of the log in `localStorage`, per user, plus small UI preferences (the Trends range, the Progress exercise). The only file that touches browser storage | Offline start, a second person on the same device |
 | `js/cognito.js` | SRP sign-in, first password, forgot password, via the vendored library. Turns Cognito errors into plain messages | Sign-in errors |
 | `js/logic.js` | The workout rules: name lookup, compact lines, top sets, per-muscle tallies, the place guess, date and number formatting. Twin of `backend/src/workoutlog/logic.py`; `shared/fixtures/` runs against both | A number or a label that disagrees with the backend |
 | `js/catalog.js` | Loads `exercise_catalog.json` once at boot, so `lookup()` is synchronous everywhere else | Unknown muscles, an area that won't fill itself in |
 | `js/parse.js` | What the Add/Edit dialog does with typed input: reps ranges (`10-12`, `10 to 12`), numbers and their limits, muscle names, and the exact error wording | A set that won't save, or a wrong error message |
 | `js/views/day.js` | The Day tab: calendar, day header, the gym/home switch, stat tiles, the editable summary, notes and bodyweight, sets per muscle, exercise cards, the example day | Anything on the Day tab |
 | `js/views/editor.js` | The Add / Edit exercise dialog: suggestions, "Same as last time", the Weights/Time/Hold switch, set rows, saving, moving and removing | Adding or editing an exercise |
+| `js/views/trends.js` | The Trends tab: the range window, the four tiles, the week-column heatmap, sets per muscle and the areas with no work | A trend number, or the heatmap |
+| `js/views/progress.js` | The Progress tab: the exercise picker, the inline-SVG top-set chart (axis ticks, scrubbing) and the session history | The chart, or a change label |
+| `js/csv.js` | Export CSV, built in the browser. Twin of `backend/src/workoutlog/export_csv.py`, checked against the same golden file | A column that is wrong or missing in the export |
 | `js/views/signin.js` | The sign-in screen and its three side steps | The sign-in forms |
 | `js/dom.js` | `h()` builds elements with text nodes only, so user text can't become markup. `toast()` | Rendering helpers |
 | `sw.js` | Caches the app shell; never `/v1/*` or `/health`. `VERSION` is stamped with the commit at deploy | A stale app after a deploy |
@@ -445,7 +448,6 @@ Other files already mention these paths, so here is when each arrives.
 
 | Path | Phase |
 | --- | --- |
-| `web/js/csv.js`, the Trends and Progress tabs | 5 |
 | `/v1/assistant`, `/v1/assistant/undo` | 6 |
 | Import of the old log | 7 |
 | `docs/07` to `docs/09` | As each phase lands |

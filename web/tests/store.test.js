@@ -52,3 +52,21 @@ test("storage that throws doesn't break the app", () => {
   store.forUser("u1").save({ days: [] });
   store.clear();
 });
+
+test("preferences survive a reload and go when the store is cleared", () => {
+  const storage = memoryStorage();
+  const store = createStore(storage);
+  assert.equal(store.pref("trendsRange", "30"), "30", "the fallback until something is set");
+  store.setPref("trendsRange", "90");
+  store.setPref("progressExercise", "Seated row");
+  assert.equal(createStore(storage).pref("trendsRange"), "90", "read back by a fresh store");
+  assert.equal(createStore(storage).pref("progressExercise"), "Seated row");
+  store.clear();
+  assert.equal(createStore(storage).pref("trendsRange", "30"), "30");
+});
+
+test("a preference set to a falsy value is still remembered", () => {
+  const store = createStore(memoryStorage());
+  store.setPref("showAll", false);
+  assert.equal(store.pref("showAll", true), false);
+});

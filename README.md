@@ -7,9 +7,10 @@ It replaces a Claude artifact of the same name with a real app: the same
 screens and rules, but the data lives in your own AWS account, the app installs
 to an iPhone home screen, and the assistant runs on your own OpenAI key.
 
-**Status:** phase 4 of 7 complete (backend on AWS; the web app signs in,
-syncs, installs to the home screen, opens offline, and the Day tab logs,
-edits and summarises a day). See [Build phases](#build-phases).
+**Status:** phase 5 of 7 complete (backend on AWS; the web app signs in,
+syncs, installs to the home screen, opens offline, logs and edits a day, and
+shows trends, per-exercise progress and a CSV export). See
+[Build phases](#build-phases).
 
 ---
 
@@ -90,6 +91,8 @@ web/                        static app: no build step, no runtime npm deps
   js/                       app, session (tokens in memory), api, sync, store
   js/logic.js               workout rules - twin of backend logic.py
   js/views/day.js           the Day tab; views/editor.js the Add/Edit dialog
+  js/views/trends.js        Trends; views/progress.js the top-set chart
+  js/csv.js                 Export CSV, twin of backend export_csv.py
   sw.js                     service worker: caches the shell, never /v1/*
   vendor/                   amazon-cognito-identity-js, pinned
   tests/                    node --test, no dependencies
@@ -146,6 +149,6 @@ To deploy, follow docs 02 to 06; the short version is `make deploy`,
 | 2 | AWS: SAM template, scripts, deploy | **done** |
 | 3 | Web foundation: shell, sign-in, PWA | **done** |
 | 4 | Day tab | **done** |
-| 5 | Trends, Progress, Export CSV | next |
-| 6 | AI: assistant, voice UI, Done for today | |
+| 5 | Trends, Progress, Export CSV | **done** |
+| 6 | AI: assistant, voice UI, Done for today | next |
 | 7 | Migration, docs, parity checklist | |

@@ -12,9 +12,12 @@ import { loadCatalog } from "./catalog.js";
 import { createSession } from "./session.js";
 import { createStore } from "./store.js";
 import { createSync, POLL_MS } from "./sync.js";
+import { exportCsv } from "./csv.js";
 import { createDayTab } from "./views/day.js";
 import { openEditor } from "./views/editor.js";
+import { createProgressTab } from "./views/progress.js";
 import { renderSignIn } from "./views/signin.js";
+import { createTrendsTab } from "./views/trends.js";
 
 const config = globalThis.WORKOUT_LOG_CONFIG;
 const store = createStore();
@@ -25,6 +28,8 @@ const touch = matchMedia("(pointer: coarse)").matches;
 let sync = null;
 let user = null; // {sub, email, groups}
 let dayTab = null;
+let trendsTab = null;
+let progressTab = null;
 let pollTimer = null;
 let swRegistration = null;
 let selectTab = () => {};
@@ -50,6 +55,7 @@ async function boot() {
   registerServiceWorker();
   wireTabs();
   wireAccountMenu();
+  wireExport();
   wireRefresh();
   if (!config) {
     showSignedOut();
@@ -105,7 +111,10 @@ function enterSaved(last, status) {
 
 function startSync(sub) {
   sync = createSync({ api, store: store.forUser(sub), onData: renderLog, onStatus: setStatus });
-  dayTab = createDayTab({ root: $("#day-tab"), today: todayISO(), actions: dayActions() });
+  const today = todayISO();
+  dayTab = createDayTab({ root: $("#day-tab"), today, actions: dayActions() });
+  trendsTab = createTrendsTab({ root: $("#trends-tab"), store, today, actions: { openDay: openDayOn } });
+  progressTab = createProgressTab({ root: $("#progress-tab"), store, today, actions: { openDay: openDayOn } });
   renderLog(sync.days());
   clearInterval(pollTimer);
   pollTimer = setInterval(() => { if (document.visibilityState === "visible") tick(); }, POLL_MS);
@@ -152,7 +161,11 @@ function stop() {
   sync = null;
   user = null;
   dayTab = null;
+  trendsTab = null;
+  progressTab = null;
   replace($("#day-tab"));
+  replace($("#trends-tab"));
+  replace($("#progress-tab"));
 }
 
 // --------------------------------------------------------------- screens
@@ -202,7 +215,17 @@ function renderLog(days) {
   if (!user || !dayTab) return; // a sync that finished after sign-out
   // null means nothing has loaded and nothing was saved: not an empty log.
   if (!days) return replace($("#day-tab"), h("p", { class: "meta" }, "Loading your log…"));
-  dayTab.update(days, todayISO());
+  const today = todayISO();
+  dayTab.update(days, today);
+  trendsTab.update(days, today);
+  progressTab.update(days, today);
+}
+
+// The calendar heatmap and the Progress history both open a day this way.
+function openDayOn(date) {
+  if (!dayTab) return;
+  dayTab.select(date);
+  selectTab("day");
 }
 
 // ------------------------------------------------------------- the day tab
@@ -214,8 +237,11 @@ function dayActions() {
     applyDay: (date, day) => sync && sync.applyDay(date, day),
     add: (date) => openDialog(date, null),
     edit: (date, key, exercise) => openDialog(date, { date, key, exercise }),
-    // Phase 5 opens the Progress tab on this exercise.
-    openProgress: (name) => toast(`${name}: per-exercise history arrives with the Progress tab.`),
+    openProgress: (name) => {
+      if (!progressTab) return;
+      progressTab.select(name);
+      selectTab("progress");
+    },
   };
 }
 
@@ -295,6 +321,19 @@ function wireAccountMenu() {
   });
   $("#signout").addEventListener("click", () => signOut(false));
   $("#signout-all").addEventListener("click", () => signOut(true));
+}
+
+function wireExport() {
+  $("#export").addEventListener("click", async () => {
+    const days = (sync && sync.days()) || [];
+    try {
+      const result = await exportCsv(days, todayISO());
+      if (result.empty) toast("Nothing logged yet, so there is nothing to export.");
+      else if (result.downloaded) toast("Exported your log as CSV.");
+    } catch {
+      toast("Couldn't build the export. Try again.");
+    }
+  });
 }
 
 function wireRefresh() {

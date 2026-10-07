@@ -920,3 +920,111 @@ dialog.sheet::backdrop { background: rgb(0 0 0 / 0.5); }
   font-size: 15px;
 }
 .check input { width: 20px; height: 20px; accent-color: var(--accent); }
+
+/* ========================================= Trends and Progress (phase 5) */
+
+.stack { display: grid; gap: var(--gap); }
+
+.range { overflow-x: auto; }
+.range > button { flex: 1 0 auto; min-height: var(--tap); padding: 0 10px; }
+
+.tiles.three { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@media (min-width: 600px) {
+  .tiles.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+/* --------------------------------------------------------------- heatmap */
+/* Scrolls inside its card so the page never scrolls sideways. */
+.heat-scroll {
+  overflow-x: auto;
+  padding-bottom: 4px;
+  margin-top: 8px;
+}
+
+.heat { display: inline-block; }
+
+/* The month labels are positioned by column, so they need a row of their own
+   with room for the text above the grid. */
+.heat-months {
+  position: relative;
+  height: 16px;
+  min-width: 100%;
+}
+
+.heat-month {
+  position: absolute;
+  top: 0;
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.heat-grid { display: flex; gap: 3px; }
+.heat-week { display: grid; grid-auto-rows: 12px; gap: 3px; }
+
+.heat-cell {
+  width: 12px;
+  height: 12px;
+  padding: 0;
+  border: 0;
+  border-radius: 2px;
+  background: var(--heat0);
+  cursor: pointer;
+}
+.heat-cell[data-level="1"] { background: var(--heat1); }
+.heat-cell[data-level="2"] { background: var(--heat2); }
+.heat-cell[data-level="3"] { background: var(--heat3); }
+.heat-cell[data-today="true"] { box-shadow: inset 0 0 0 1.5px var(--ink); }
+.heat-cell.empty { background: none; cursor: default; }
+
+.heat-key {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.heat-key .heat-cell { cursor: default; }
+
+/* Dashed, because it marks an absence rather than a thing. */
+.pill.missing {
+  padding: 3px 10px;
+  border: 1px dashed var(--line);
+  border-radius: 999px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* ----------------------------------------------------------------- chart */
+.chart { margin-top: 8px; }
+.chart-svg { display: block; width: 100%; height: auto; touch-action: pan-y; }
+
+.chart-grid { stroke: var(--hair); stroke-width: 1; }
+.chart-label { fill: var(--muted); font-size: 11px; font-family: var(--font-body); }
+.chart-line { stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.chart-dot { fill: var(--accent); }
+/* The best session is hollow rather than a second colour. */
+.chart-dot.best { fill: var(--surface); stroke: var(--accent); stroke-width: 2; }
+.chart-rule { stroke: var(--faint); stroke-width: 1; stroke-dasharray: 3 3; }
+
+/* Reserves its line so the card doesn't jump as you scrub. */
+.chart-tip {
+  min-height: 21px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* --------------------------------------------------------------- history */
+table.history td, table.history th { vertical-align: top; }
+table.history .change { font-weight: 600; }
+.change.good { color: var(--good); }
+.change.bad { color: var(--bad); }
+.change.faint { color: var(--faint); }
+
+/* A link inside a table cell, without the 44px row height a .linklike wants. */
+.linklike.cell {
+  min-height: 0;
+  padding: 0;
+  font-size: inherit;
+  font-variant-numeric: tabular-nums;
+}
