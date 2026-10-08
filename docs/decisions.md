@@ -517,6 +517,48 @@ this container has no access to the pricing pages.
 table that looks uniformly authoritative is worse than one that says which half
 to check, because you cannot tell which number to distrust.
 
+## After launch
+
+### 37. Log first, then ask: a set can have no numbers
+
+**Chosen:** a set with nothing measured is valid, stored as `{}` and shown as
+"1 set". The assistant logs whatever was said straight away, even a bare
+exercise name, then asks once for what is missing. An answer fills in that
+exercise with `replace_exercise`; no answer leaves it as logged.
+
+**Alternative:** the old rule, every set needs at least one of reps, weight,
+seconds, minutes or distance.
+
+**Why:** in real use, "record a set of glute bridge" (bodyweight, no reps) had
+nothing the old rule could store, so the assistant could only ask. It asked
+three times in a row, and tapping Done on the question lost the set. A set
+you did is worth recording even before its numbers are known. Top set and rep
+totals skip these sets; set counts include them. The Add/Edit dialog still
+asks for a number, because that is where you fill them in.
+
+### 38. Voice logs to a day you picked, otherwise today
+
+**Chosen:** the Day tab remembers whether its day was picked by you (a tap,
+or a day opened from Trends, Progress or a voice turn) or chosen on load.
+Voice sends the day only when you picked it; otherwise the server logs to
+today. The model is also told that "today" always means today's date.
+
+**Alternative:** send whatever day is on screen, as before.
+
+**Why:** with nothing logged today, the Day tab opens on the last workout
+(as the brief asks). Voice then logged "glute bridge ... today" five days back,
+twice. The brief already draws this line for the Add dialog: "the selected
+day if I picked one, otherwise today".
+
+### 39. The assistant prompt names no one
+
+**Chosen:** the prompt and the context sent with it say "the user" and
+"they". Notes cover how the workout went or how you felt, with no mention of
+anyone's back. A test fails if "Yash", "he" or "his" comes back.
+
+**Why:** every account gets the same prompt. It began "You keep Yash's
+workout log", which every other user's assistant would have believed.
+
 ---
 
 ## Things deliberately not done
@@ -540,6 +582,7 @@ to check, because you cannot tell which number to distrust.
 | A number differs between the app and a summary | 7 - the two logic twins drifted. Run both suites |
 | A set logged twice after a flaky connection | 25, 29 - the idempotency key |
 | A voice turn says nothing was logged but something was | 31 |
+| An exercise shows "1 set" with no numbers | 37 - logged before the reps were known |
 | Undo refuses | 23 - the day changed after the turn |
 | "Done for today" offered on an old imported day | 33 |
 | Styling missing only in production | 3 - a `style` attribute dropped by the CSP |

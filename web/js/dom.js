@@ -23,6 +23,15 @@ export function h(tag, attrs = {}, ...children) {
   return el;
 }
 
+// The same for inline SVG icons, which need their own namespace. Attributes
+// only, no event handlers: an icon sits inside a button that has them.
+export function svg(tag, attrs = {}, ...children) {
+  const el = document.createElementNS("http://www.w3.org/2000/svg", tag);
+  for (const [name, value] of Object.entries(attrs)) el.setAttribute(name, String(value));
+  append(el, children);
+  return el;
+}
+
 function append(el, children) {
   for (const child of children.flat(Infinity)) {
     if (child === undefined || child === null || child === false) continue;

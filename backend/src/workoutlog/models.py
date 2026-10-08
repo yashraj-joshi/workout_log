@@ -51,7 +51,10 @@ DateStr = Annotated[str, Field(min_length=10, max_length=10)]
 
 
 class SetIn(BaseModel):
-    """One set. Only the fields that apply are present, on the way in and out."""
+    """One set. Only the fields that apply are present, on the way in and out.
+
+    A set with nothing measured is still a set: "did a set of glute bridges"
+    gets logged as said, and the numbers can be filled in later."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -71,10 +74,6 @@ class SetIn(BaseModel):
                 raise ValueError("repsMax needs reps as well")
             if self.repsMax < self.reps:
                 raise ValueError("repsMax should not be below reps")
-        measured = any(v is not None for v in (self.reps, self.weight, self.seconds,
-                                               self.minutes, self.distance))
-        if not measured:
-            raise ValueError("a set needs at least one of reps, weight, seconds, minutes or distance")
         # A unit without a distance is noise; a distance without one defaults to miles.
         if self.distance is None:
             object.__setattr__(self, "distanceUnit", None)

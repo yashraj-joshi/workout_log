@@ -73,5 +73,19 @@
     "expect": { "compactLine": "2 × 10 @ 60 kg", "isCardio": false,
       "topSet": { "kind": "weight", "value": 60, "label": "60 kg × 10" },
       "muscles": ["Quads", "Glutes", "Inner thighs"], "group": "Legs" }
+  },
+  {
+    "case": "a set with nothing measured yet",
+    "exercise": { "exercise": "Glute bridge", "group": "Legs", "muscles": ["Glutes", "Hamstrings"], "sets": [ {} ] },
+    "expect": { "compactLine": "1 set", "isCardio": false, "topSet": null,
+      "muscles": ["Glutes", "Hamstrings"], "group": "Legs" }
+  },
+  {
+    "case": "measured sets, then some without numbers",
+    "exercise": { "exercise": "Glute bridge", "group": "Legs", "muscles": ["Glutes", "Hamstrings"],
+      "sets": [ { "reps": 10 }, { "reps": 10 }, { "reps": 10 }, {}, {} ] },
+    "expect": { "compactLine": "3 × 10 · 2 sets", "isCardio": false,
+      "topSet": { "kind": "reps", "value": 10, "label": "10 reps" },
+      "muscles": ["Glutes", "Hamstrings"], "group": "Legs" }
   }
 ]

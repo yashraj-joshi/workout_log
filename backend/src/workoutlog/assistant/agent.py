@@ -37,7 +37,7 @@ REPLY_SCHEMA = {
         },
         "question": {
             "type": ["string", "null"],
-            "description": "One question, only when you need the answer to log correctly.",
+            "description": "One question, for what is missing from what you logged, or when you cannot tell what the user meant.",
         },
     },
     "required": ["reply", "assumptions", "question"],
@@ -67,19 +67,19 @@ def build_context(*, today: str, timezone: str, date: str, day: dict | None,
     """Everything the model needs that is not in the user's sentence."""
     lines = [
         f"Today is {logic.fmt_date_long(today)} ({today}). Timezone: {timezone}.",
-        f"The day open in the app is {date}. Log to that date unless he says otherwise "
-        f"(\"yesterday\", \"Monday\"), and then use the date he means.",
+        f"Log to {date} unless the user names a day (\"yesterday\", \"Monday\"), and then "
+        f"use the date they mean. \"Today\" always means {today}.",
         "",
         "That day right now:",
         day_context(day, date),
     ]
     if known_names:
-        lines += ["", f"Exercise names he already uses: {', '.join(known_names[:40])}."]
+        lines += ["", f"Exercise names the user already uses: {', '.join(known_names[:40])}."]
     if turns:
         lines += ["", "The last few exchanges about this date:"]
         for turn in turns:
             if turn.get("transcript"):
-                lines.append(f"  he said: {turn['transcript']}")
+                lines.append(f"  the user said: {turn['transcript']}")
             if turn.get("reply"):
                 lines.append(f"  you replied: {turn['reply']}")
             if turn.get("question"):

@@ -7,13 +7,28 @@
 // Nothing here knows about OpenAI. It posts audio or text to /v1/assistant and
 // renders what comes back.
 
-import { h, replace, toast } from "./dom.js";
+import { h, replace, svg, toast } from "./dom.js";
 import { createRecorder } from "./recorder.js";
 
 export { pickMimeType } from "./recorder.js";
 
 const MAX_SECONDS = 60;
 const DISMISS_MS = 8000;
+
+// Line icons in currentColor, 24 x 24, so they follow the button's colors in
+// both themes.
+const icon = (...shapes) => svg("svg", {
+  viewBox: "0 0 24 24", "aria-hidden": "true", fill: "none", stroke: "currentColor",
+  "stroke-width": 2, "stroke-linecap": "round", "stroke-linejoin": "round",
+}, ...shapes);
+const micIcon = () => icon(
+  svg("rect", { x: 9, y: 2, width: 6, height: 12, rx: 3 }),
+  svg("path", { d: "M19 10v1a7 7 0 0 1-14 0v-1" }),
+  svg("path", { d: "M12 18v4" }));
+const sendIcon = () => icon(svg("path", { d: "M12 19V5" }), svg("path", { d: "m5 12 7-7 7 7" }));
+const keyboardIcon = () => icon(
+  svg("rect", { x: 2, y: 4, width: 20, height: 16, rx: 2 }),
+  svg("path", { d: "M6 8h.01M10 8h.01M14 8h.01M18 8h.01M8 12h.01M12 12h.01M16 12h.01M7 16h10" }));
 
 export const clock = (seconds) =>
   `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
@@ -67,20 +82,20 @@ export function createVoice({ host, api, actions, getDate, getToday }) {
   });
 
   const panel = h("div", { class: "voice-panel", hidden: true });
-  const glyph = h("span", { class: "mic-glyph", "aria-hidden": "true" }, "●");
   // Idle, it starts a recording. Recording, or stopped, it sends.
   const button = h("button", {
     class: "mic", type: "button", "aria-label": "Log by voice",
     onclick: () => (rec.state() === "idle" ? rec.start() : rec.send()),
-  }, glyph);
+  }, micIcon());
   const stopButton = h("button", {
-    class: "mic-stop", type: "button", "aria-label": "Stop recording", hidden: true,
+    class: "mic-side mic-stop", type: "button", "aria-label": "Stop recording", title: "Stop", hidden: true,
     onclick: () => rec.stop(),
   }, h("span", { class: "mic-stop-glyph", "aria-hidden": "true" }));
 
   const typeButton = h("button", {
-    class: "btn type-instead", type: "button", onclick: () => showTyping(),
-  }, "Type instead");
+    class: "mic-side type-instead", type: "button", "aria-label": "Type instead", title: "Type instead",
+    onclick: () => showTyping(),
+  }, keyboardIcon());
 
   replace(host, panel, h("div", { class: "voice-bar" }, typeButton, stopButton, button));
 
@@ -109,8 +124,8 @@ export function createVoice({ host, api, actions, getDate, getToday }) {
     typeButton.disabled = busy;
     stopButton.hidden = state !== "recording";
     button.disabled = idle ? busy : state === "starting" || state === "stopping";
+    if (button.classList.contains("send") === idle) replace(button, idle ? micIcon() : sendIcon());
     button.classList.toggle("send", !idle);
-    glyph.textContent = idle ? "●" : "↑";
     button.setAttribute("aria-label", idle ? "Log by voice"
       : state === "stopped" ? "Send recording" : "Stop and send");
   }

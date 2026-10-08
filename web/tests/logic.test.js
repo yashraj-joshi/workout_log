@@ -32,6 +32,10 @@ test("exercise rollups match the golden cases", () => {
     assert.deepEqual(L.musclesOf(exercise), want.muscles, name);
     assert.equal(L.groupOf(exercise), want.group, name);
     const top = L.topSet(exercise);
+    if (want.topSet === null) {
+      assert.equal(top, null, name);
+      continue;
+    }
     for (const [field, value] of Object.entries(want.topSet)) {
       assert.deepEqual(top[field], value, `${name}: topSet.${field}`);
     }

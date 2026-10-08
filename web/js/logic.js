@@ -153,6 +153,7 @@ export function setLabel(s, unit = "lb") {
 }
 
 // Consecutive identical sets merge: "3 × 10–12 @ 40 lb · 8 @ 30 lb".
+// Sets with nothing measured read as a count: "3 × 10 · 1 set".
 export function compactLine(exercise) {
   const sets = exercise.sets || [];
   const unit = exercise.unit || "lb";
@@ -163,6 +164,7 @@ export function compactLine(exercise) {
     while (index + run < sets.length && setIdentity(sets[index + run]) === setIdentity(sets[index])) run++;
     const label = setLabel(sets[index], unit);
     if (label) chunks.push(run > 1 ? `${run} ${TIMES} ${label}` : label);
+    else chunks.push(run === 1 ? "1 set" : `${run} sets`);
     index += run;
   }
   return chunks.join(MIDDOT);

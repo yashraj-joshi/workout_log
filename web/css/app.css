@@ -1043,24 +1043,25 @@ table.history .change { font-weight: 600; }
   z-index: 18;
 }
 
+/* While recording, or with a take waiting, the mic becomes Send. */
 .mic {
+  display: grid;
+  place-items: center;
   width: 64px;
   height: 64px;
   border: 0;
   border-radius: 50%;
   background: var(--accent);
   color: var(--accent-ink);
-  font-size: 22px;
-  line-height: 1;
   cursor: pointer;
   box-shadow: 0 6px 18px rgb(0 0 0 / 0.22);
 }
-/* While recording, or with a take waiting, the mic becomes Send. */
-.mic.send { font-size: 30px; font-weight: 700; }
+.mic svg { width: 28px; height: 28px; }
 .mic:disabled { opacity: 0.6; cursor: default; }
 
-/* Stop sits beside Send while recording: ends the take but keeps it. */
-.mic-stop {
+/* The round button beside it: Type while idle, Stop while recording (which
+   ends the take but keeps it). */
+.mic-side {
   display: grid;
   place-items: center;
   width: 52px;
@@ -1068,9 +1069,12 @@ table.history .change { font-weight: 600; }
   border: 1px solid var(--line);
   border-radius: 50%;
   background: var(--surface);
+  color: var(--ink);
   cursor: pointer;
   box-shadow: 0 4px 12px rgb(0 0 0 / 0.14);
 }
+.mic-side svg { width: 24px; height: 24px; }
+.mic-side:disabled { opacity: 0.6; cursor: default; }
 .mic-stop-glyph {
   width: 16px;
   height: 16px;
@@ -1078,7 +1082,6 @@ table.history .change { font-weight: 600; }
   background: var(--bad);
 }
 
-.type-instead { background: var(--surface); box-shadow: 0 4px 12px rgb(0 0 0 / 0.14); }
 
 /* The card a turn comes back in, above the mic and inside the gutters. */
 .voice-panel {

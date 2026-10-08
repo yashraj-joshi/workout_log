@@ -111,6 +111,44 @@ def test_missing_reps_logs_what_there_is_and_asks_once(assistant):
     assert sets == [{"weight": 120}] * 3, "logged without inventing reps"
 
 
+NO_NUMBERS = {"reps": None, "repsMax": None, "weight": None, "seconds": None, "minutes": None,
+              "distance": None, "distanceUnit": None, "note": None}
+
+
+def test_a_set_with_no_numbers_is_logged_before_asking(assistant):
+    # "Record a set of glute bridge" used to log nothing until the reps were
+    # answered, so tapping Done on the question lost the set.
+    client = assistant(
+        script=[("add_exercise", {
+            "date": TODAY, "exercise": "Glute bridge", "group": "Legs", "muscles": ["Glutes", "Hamstrings"],
+            "unit": "lb", "perHand": None, "notes": None, "sets": [NO_NUMBERS],
+        })],
+        reply="Logged #1 Glute bridge: 1 set.",
+        question="How many reps?")
+    body = turn(client, "record a set of glute bridge").json()
+
+    assert body["question"] == "How many reps?"
+    assert body["changedDates"] == [TODAY], "logged now, whether or not the question is answered"
+    assert body["days"][0]["exercises"]["01"]["sets"] == [{}]
+
+
+def test_the_answer_fills_in_the_set_rather_than_adding_one(assistant):
+    turn(assistant(script=[("add_exercise", {
+        "date": TODAY, "exercise": "Glute bridge", "group": "Legs", "muscles": None,
+        "unit": "lb", "perHand": None, "notes": None, "sets": [NO_NUMBERS],
+    })]), "record a set of glute bridge")
+
+    client = assistant(script=[("replace_exercise", {
+        "date": TODAY, "key": "01", "exercise": "Glute bridge", "group": "Legs", "muscles": None,
+        "unit": "lb", "perHand": None, "notes": None, "sets": [{**NO_NUMBERS, "reps": 10}],
+    })], reply="Updated #1 Glute bridge: 10.")
+    body = turn(client, "10").json()
+
+    exercises = body["days"][0]["exercises"]
+    assert list(exercises) == ["01"]
+    assert exercises["01"]["sets"] == [{"reps": 10}]
+
+
 def test_a_correction_rewrites_the_exercise(assistant):
     client = assistant(script=[("add_exercise", {
         "date": TODAY, "exercise": "Seated row", "group": None, "muscles": None, "unit": "lb",
@@ -459,7 +497,7 @@ def test_the_model_is_told_what_is_already_on_the_day(assistant):
     assert "#1 key=01 Seated row" in agent.context
     assert "10 @ 40 lb" in agent.context
     assert "Timezone: America/New_York" in agent.context
-    assert "Seated row" in agent.context.split("names he already uses:")[1]
+    assert "Seated row" in agent.context.split("names the user already uses:")[1]
 
 
 # -------------------------------------------------------------- idempotency

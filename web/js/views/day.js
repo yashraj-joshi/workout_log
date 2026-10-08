@@ -50,6 +50,10 @@ function loggedRange(exercises) {
 export function createDayTab({ root, actions, today, canUseAI = false }) {
   let days = [];
   let selected = null;
+  // Whether `selected` was chosen by me (a tap, or a day opened from Trends,
+  // Progress or a voice turn) rather than picked on load. Voice logs to a day
+  // I chose, and otherwise to today.
+  let chosen = false;
   let month = null; // {year, month} on show in the calendar
   let drafts = {}; // field -> what I have typed but not saved
   let pendingRemove = null; // the exercise key showing "Remove this exercise?"
@@ -63,6 +67,7 @@ export function createDayTab({ root, actions, today, canUseAI = false }) {
     .map((key) => [key, day.exercises[key]]);
 
   function setSelected(date) {
+    chosen = Boolean(date);
     if (date === selected) return;
     selected = date;
     drafts = {};
@@ -339,7 +344,7 @@ export function createDayTab({ root, actions, today, canUseAI = false }) {
         done: "Notes saved.",
         build: ({ id, value }) => h("textarea", {
           id, class: "box", rows: 2, maxlength: 1000,
-          placeholder: "How it felt, especially your back.",
+          placeholder: "How it went, how you felt.",
         }, value),
       }),
       editable({
@@ -512,5 +517,5 @@ export function createDayTab({ root, actions, today, canUseAI = false }) {
         "each set counts toward every muscle listed for that exercise; cardio counts in minutes instead."));
   }
 
-  return { update, select: setSelected, selected: () => selected };
+  return { update, select: setSelected, selected: () => selected, chosen: () => (chosen ? selected : null) };
 }

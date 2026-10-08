@@ -44,7 +44,10 @@ _SET = {
     "required": ["reps", "repsMax", "weight", "seconds", "minutes", "distance", "distanceUnit", "note"],
 }
 
-_SETS = {"type": "array", "items": _SET, "description": "One entry per set, in the order performed."}
+_SETS = {"type": "array", "items": _SET, "description": (
+    "One entry per set, in the order performed. A set the user did but gave no numbers "
+    "for is all nulls."
+)}
 
 
 def _exercise_fields(include_sets: bool = True) -> dict:

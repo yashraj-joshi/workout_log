@@ -237,7 +237,10 @@ function startVoice() {
   voice = createVoice({
     host: $("#voice"),
     api,
-    getDate: () => (dayTab ? dayTab.selected() : null),
+    // The day on screen only if I chose it. On load the Day tab opens on the
+    // last workout when today is empty, and "bench, 3 sets of 8" then is
+    // about today, not that day.
+    getDate: () => (dayTab ? dayTab.chosen() : null),
     getToday: todayISO,
     actions: {
       // A turn can touch more than one day, and can delete one.

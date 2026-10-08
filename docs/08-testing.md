@@ -197,6 +197,9 @@ iOS treats them as different sites, so the microphone has to be allowed again.
 - [ ] "Bird dogs, 3 rounds of 10-second holds each side." logs holds with the note
 - [ ] "Dumbbell press, 3 sets of 10 with the 25s" logs it and says what it assumed
 - [ ] A command with no reps logs the rest and asks for reps once
+- [ ] "Record a set of glute bridge" logs "1 set" straight away and asks for
+      reps; Done keeps the set, and answering "10" fills it in rather than
+      adding a second exercise
 - [ ] "Make that 50 pounds" corrects the last exercise
 - [ ] "Remove the plank" removes it
 - [ ] "I'm at the gym" sets the place; "my back felt fine" goes to notes
@@ -205,7 +208,11 @@ iOS treats them as different sites, so the microphone has to be allowed again.
 - [ ] A question about an exercise you have never done says so plainly
 - [ ] Undo puts it back; after another change it refuses rather than clobbering it
 - [ ] "Done for today" writes the summary; saying it again says it is already written
-- [ ] Type instead sends text to the same place
+- [ ] The keyboard button beside the mic sends typed text to the same place
+- [ ] With nothing logged today, the app opens on the last workout day; a
+      voice log then goes to **today**, and the app jumps there. After tapping
+      a day on the calendar, voice logs to that day
+- [ ] "... today" logs to today even with another day picked
 - [ ] × Cancel while recording throws it away: nothing is sent and the mic
       indicator goes off
 - [ ] The mic is greyed out while a turn is sending

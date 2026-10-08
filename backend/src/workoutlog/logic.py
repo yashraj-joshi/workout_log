@@ -170,7 +170,8 @@ def set_label(s: dict, unit: str = "lb") -> str:
 
 
 def compact_line(exercise: dict) -> str:
-    """Consecutive identical sets merge: "3 x 10-12 @ 40 lb - 8 @ 30 lb"."""
+    """Consecutive identical sets merge: "3 x 10-12 @ 40 lb - 8 @ 30 lb".
+    Sets with nothing measured read as a count: "3 x 10 - 1 set"."""
     sets = exercise.get("sets") or []
     unit = exercise.get("unit") or "lb"
     chunks: list[str] = []
@@ -182,6 +183,8 @@ def compact_line(exercise: dict) -> str:
         label = set_label(sets[index], unit)
         if label:
             chunks.append(f"{run} {TIMES} {label}" if run > 1 else label)
+        else:
+            chunks.append(f"{run} set" if run == 1 else f"{run} sets")
         index += run
     return MIDDOT.join(chunks)
 

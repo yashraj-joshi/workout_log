@@ -28,6 +28,9 @@ def test_exercise(case):
     assert L.muscles_of(exercise) == want["muscles"]
     assert L.group_of(exercise) == want["group"]
     top = L.top_set(exercise)
+    if want["topSet"] is None:
+        assert top is None
+        return
     for field, value in want["topSet"].items():
         assert top[field] == value, field
 

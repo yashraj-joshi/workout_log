@@ -12,7 +12,7 @@ import json
 import pytest
 from openai.types.responses.response_function_tool_call import ResponseFunctionToolCall
 
-from workoutlog.assistant import agent, tools
+from workoutlog.assistant import agent, prompts, tools
 from workoutlog.errors import ApiError
 
 
@@ -212,6 +212,25 @@ def test_the_day_context_describes_what_is_already_logged():
     assert "where: home" in text and "(guessed)" not in text
     assert "bodyweight: 180 lb" in text
     assert "summary: already written" in text
+
+
+def test_today_means_today_even_with_another_day_open():
+    # The first real use logged "glute bridge ... today" to the day the app
+    # happened to have open, five days earlier.
+    text = agent.build_context(today="2026-10-08", timezone="America/New_York", date="2026-10-03",
+                               day=None, known_names=[], turns=[])
+    assert "Log to 2026-10-03 unless the user names a day" in text
+    assert '"Today" always means 2026-10-08.' in text
+
+
+@pytest.mark.parametrize("word", ["Yash", " he ", " his ", " him ", "He "])
+def test_the_prompt_is_about_any_user_not_one_person(word):
+    # Every account gets the same prompt, and the context it reads with it.
+    context = agent.build_context(today="2026-10-08", timezone="UTC", date="2026-10-08", day=None,
+                                  known_names=["Plank"],
+                                  turns=[{"transcript": "plank", "reply": "Logged.", "question": "How long?"}])
+    for text in (prompts.ASSISTANT_SYSTEM, context, json.dumps(tools.SPECS)):
+        assert word not in text
 
 
 def test_an_empty_day_says_so():

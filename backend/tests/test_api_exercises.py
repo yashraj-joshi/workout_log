@@ -137,7 +137,6 @@ def test_exercise_validation_messages(api):
     bad = [
         {"exercise": "", "sets": [{"reps": 10}]},
         {"exercise": "Row", "sets": []},
-        {"exercise": "Row", "sets": [{}]},
         {"exercise": "Row", "sets": [{"reps": 10, "repsMax": 8}]},
         {"exercise": "Row", "sets": [{"reps": 10}], "muscles": ["Quadzilla"]},
         {"exercise": "Row", "sets": [{"reps": 10}], "group": "Cardiovascular"},
@@ -149,6 +148,13 @@ def test_exercise_validation_messages(api):
         response = client.post("/v1/days/2026-09-25/exercises", json=body)
         assert response.status_code == 422, body
         assert response.json()["error"]["code"] == "validation_error"
+
+
+def test_a_set_with_nothing_measured_is_kept(api):
+    # Said, not measured: "did a set of glute bridges". The numbers can come later.
+    day = api().post("/v1/days/2026-09-25/exercises",
+                     json={"exercise": "Glute bridge", "sets": [{"reps": 10}, {}]}).json()["day"]
+    assert day["exercises"]["01"]["sets"] == [{"reps": 10}, {}]
 
 
 def test_unknown_muscle_message_lists_the_valid_ones(api):
