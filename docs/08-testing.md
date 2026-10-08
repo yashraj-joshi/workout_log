@@ -183,6 +183,15 @@ iOS treats them as different sites, so the microphone has to be allowed again.
 - [ ] The mic is on every tab, above the home bar, and does not cover content
 - [ ] Tapping it asks for the microphone the first time
 - [ ] Recording shows a ring that moves with your voice, and a timer
+- [ ] While recording, the mic turns into ↑ with ■ beside it
+- [ ] ↑ while recording stops and sends at once; "Sending…" shows straight away
+- [ ] ■ stops without sending: the mic indicator goes off, the card says
+      "Recorded", and ↑ then sends it
+- [ ] After ■, Record again starts over and × Discard throws it away
+- [ ] At 1:00 it sends by itself
+- [ ] Switch apps mid-recording: on the way back it is stopped and kept, ready
+      to send
+- [ ] Tapping the mic twice quickly opens one recording, not two
 - [ ] "Seated row, 3 sets of 10 to 12 at 40 pounds." logs it
 - [ ] "Treadmill walk, 25 minutes, 1.3 miles." logs minutes and distance
 - [ ] "Bird dogs, 3 rounds of 10-second holds each side." logs holds with the note
@@ -197,7 +206,9 @@ iOS treats them as different sites, so the microphone has to be allowed again.
 - [ ] Undo puts it back; after another change it refuses rather than clobbering it
 - [ ] "Done for today" writes the summary; saying it again says it is already written
 - [ ] Type instead sends text to the same place
-- [ ] × cancels a recording without sending it
+- [ ] × Cancel while recording throws it away: nothing is sent and the mic
+      indicator goes off
+- [ ] The mic is greyed out while a turn is sending
 - [ ] The card disappears after a few seconds, unless it asked a question
 - [ ] Turn the network off mid-turn: it says you are offline and Retry works
       without re-recording

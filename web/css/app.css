@@ -1055,7 +1055,28 @@ table.history .change { font-weight: 600; }
   cursor: pointer;
   box-shadow: 0 6px 18px rgb(0 0 0 / 0.22);
 }
-.mic.live { background: var(--bad); }
+/* While recording, or with a take waiting, the mic becomes Send. */
+.mic.send { font-size: 30px; font-weight: 700; }
+.mic:disabled { opacity: 0.6; cursor: default; }
+
+/* Stop sits beside Send while recording: ends the take but keeps it. */
+.mic-stop {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: var(--surface);
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgb(0 0 0 / 0.14);
+}
+.mic-stop-glyph {
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  background: var(--bad);
+}
 
 .type-instead { background: var(--surface); box-shadow: 0 4px 12px rgb(0 0 0 / 0.14); }
 

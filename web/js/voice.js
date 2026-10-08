@@ -7,18 +7,16 @@
 // Nothing here knows about OpenAI. It posts audio or text to /v1/assistant and
 // renders what comes back.
 
-import { $, h, replace, toast } from "./dom.js";
+import { h, replace, toast } from "./dom.js";
+import { createRecorder } from "./recorder.js";
+
+export { pickMimeType } from "./recorder.js";
 
 const MAX_SECONDS = 60;
 const DISMISS_MS = 8000;
-// Safari records mp4, Chrome and Firefox webm. The server accepts both and
-// passes the type through to the transcriber.
-const TYPES = ["audio/mp4", "audio/webm"];
 
-export function pickMimeType(recorder = globalThis.MediaRecorder) {
-  if (!recorder || !recorder.isTypeSupported) return TYPES[1];
-  return TYPES.find((type) => recorder.isTypeSupported(type)) || TYPES[1];
-}
+export const clock = (seconds) =>
+  `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 
 // What to say when a turn fails. The server's own message is used where it
 // has one worth showing; these cover the cases it never gets to answer.
@@ -33,6 +31,7 @@ export function messageFor(err) {
     default: break;
   }
   if (err.unsupported) return "This browser can't record audio. Use Type instead.";
+  if (err.empty) return "Nothing was recorded. Try again.";
   switch (err.status) {
     case 0: return "You're offline. Voice needs a connection.";
     case 402: return err.message || "OpenAI credit ran out.";
@@ -46,13 +45,6 @@ export function messageFor(err) {
 }
 
 export function createVoice({ host, api, actions, getDate, getToday }) {
-  // The turn being worked on, and the last recording, kept for Retry.
-  let recorder = null;
-  let chunks = [];
-  let stream = null;
-  let meter = null;
-  let ticker = null;
-  let seconds = 0;
   // The turn waiting to be sent, and the key that identifies it. The key
   // stays the same across every retry of the same recording, so a reply lost
   // on a weak connection cannot turn into a second set in the log.
@@ -60,96 +52,89 @@ export function createVoice({ host, api, actions, getDate, getToday }) {
   let pendingKey = null;
   let dismissTimer = null;
   let busy = false;
+  let meter = null;
+  // True while the panel shows the recording itself, so it closes when the
+  // recording ends without anything to show (Cancel, the app backgrounded
+  // before the mic started).
+  let recordingPanel = false;
+
+  const rec = createRecorder({
+    maxSeconds: MAX_SECONDS,
+    onState: changed,
+    onTick: showTime,
+    onSend: sendTake,
+    onError: fail,
+  });
 
   const panel = h("div", { class: "voice-panel", hidden: true });
+  const glyph = h("span", { class: "mic-glyph", "aria-hidden": "true" }, "●");
+  // Idle, it starts a recording. Recording, or stopped, it sends.
   const button = h("button", {
     class: "mic", type: "button", "aria-label": "Log by voice",
-    onclick: () => (recorder ? stop() : start()),
-  }, h("span", { class: "mic-glyph", "aria-hidden": "true" }, "●"));
+    onclick: () => (rec.state() === "idle" ? rec.start() : rec.send()),
+  }, glyph);
+  const stopButton = h("button", {
+    class: "mic-stop", type: "button", "aria-label": "Stop recording", hidden: true,
+    onclick: () => rec.stop(),
+  }, h("span", { class: "mic-stop-glyph", "aria-hidden": "true" }));
 
   const typeButton = h("button", {
     class: "btn type-instead", type: "button", onclick: () => showTyping(),
   }, "Type instead");
 
-  replace(host, panel, h("div", { class: "voice-bar" }, typeButton, button));
+  replace(host, panel, h("div", { class: "voice-bar" }, typeButton, stopButton, button));
+
+  // Recording in the background is cut off by iOS anyway. Stop and keep it,
+  // so it is there to send on the way back.
+  const onVisibility = () => { if (document.hidden) rec.stop(); };
+  document.addEventListener("visibilitychange", onVisibility);
 
   // ------------------------------------------------------------- recording
 
-  async function start() {
-    clearTimeout(dismissTimer);
-    if (!navigator.mediaDevices || !globalThis.MediaRecorder) {
-      return fail(Object.assign(new Error("unsupported"), { unsupported: true }));
-    }
-    try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    } catch (err) {
-      return fail(err);
-    }
-    const mimeType = pickMimeType();
-    chunks = [];
-    seconds = 0;
-    recorder = new MediaRecorder(stream, { mimeType });
-    recorder.addEventListener("dataavailable", (event) => {
-      if (event.data && event.data.size) chunks.push(event.data);
-    });
-    recorder.addEventListener("stop", () => send(mimeType));
-    recorder.start();
-    buzz(12);
-    listen();
-    ticker = setInterval(() => {
-      seconds += 1;
-      showRecording();
-      if (seconds >= MAX_SECONDS) stop();
-    }, 1000);
-    showRecording();
-    button.classList.add("live");
-    button.setAttribute("aria-label", "Stop recording and send");
+  function changed(state) {
+    renderBar();
+    if (state === "recording") listen();
+    else quiet();
+    if (state === "starting") showStarting();
+    else if (state === "recording") showRecording();
+    else if (state === "stopped") showStopped();
+    else if (state === "idle" && recordingPanel) hide();
+    if (state === "recording") buzz(12);
   }
 
-  function stop() {
-    if (recorder && recorder.state !== "inactive") recorder.stop();
-    teardown();
-  }
-
-  // Cancel throws the audio away rather than sending it.
-  function cancel() {
-    chunks = [];
-    if (recorder && recorder.state !== "inactive") {
-      recorder.removeEventListener("stop", send);
-      recorder.onstop = null;
-      recorder.stop();
-    }
-    recorder = null;
-    teardown();
-    hide();
-  }
-
-  function teardown() {
-    clearInterval(ticker);
-    ticker = null;
-    if (meter) { meter.close(); meter = null; }
-    if (stream) { stream.getTracks().forEach((track) => track.stop()); stream = null; }
-    button.classList.remove("live");
-    button.setAttribute("aria-label", "Log by voice");
+  function renderBar() {
+    const state = rec.state();
+    const idle = state === "idle";
+    typeButton.hidden = !idle;
+    typeButton.disabled = busy;
+    stopButton.hidden = state !== "recording";
+    button.disabled = idle ? busy : state === "starting" || state === "stopping";
+    button.classList.toggle("send", !idle);
+    glyph.textContent = idle ? "●" : "↑";
+    button.setAttribute("aria-label", idle ? "Log by voice"
+      : state === "stopped" ? "Send recording" : "Stop and send");
   }
 
   // A level meter, so it is obvious the mic is actually hearing something.
   function listen() {
     try {
       const Context = globalThis.AudioContext || globalThis.webkitAudioContext;
-      if (!Context) return;
+      const stream = rec.stream();
+      if (!Context || !stream) return;
       const context = new Context();
+      // Made after the permission prompt, outside the tap, so Safari can
+      // start it suspended.
+      if (context.state === "suspended") context.resume().catch(() => {});
       const analyser = context.createAnalyser();
       analyser.fftSize = 256;
       context.createMediaStreamSource(stream).connect(analyser);
       const data = new Uint8Array(analyser.frequencyBinCount);
       const frame = () => {
-        if (!meter) return;
+        if (meter !== context) return;
         analyser.getByteTimeDomainData(data);
         let peak = 0;
         for (const value of data) peak = Math.max(peak, Math.abs(value - 128));
-        const level = Math.min(1, peak / 70);
-        panel.style.setProperty("--level", String(level));
+        panel.style.setProperty("--level", String(Math.min(1, peak / 70)));
         requestAnimationFrame(frame);
       };
       meter = context;
@@ -159,14 +144,25 @@ export function createVoice({ host, api, actions, getDate, getToday }) {
     }
   }
 
+  function quiet() {
+    try {
+      if (meter) Promise.resolve(meter.close()).catch(() => {});
+    } catch {
+      // Already closed.
+    }
+    meter = null;
+    panel.style.removeProperty("--level");
+  }
+
   const buzz = (ms) => { try { navigator.vibrate && navigator.vibrate(ms); } catch { /* not supported */ } };
 
-  async function send(mimeType) {
-    recorder = null;
-    const blob = new Blob(chunks, { type: mimeType });
-    chunks = [];
-    if (!blob.size) return hide();
-    pending = { audioBase64: await toBase64(blob), audioMimeType: mimeType };
+  async function sendTake(take) {
+    showWorking("Sending…");
+    try {
+      pending = { audioBase64: await toBase64(take.blob), audioMimeType: take.mimeType };
+    } catch (err) {
+      return fail(err);
+    }
     pendingKey = newKey();
     deliver();
   }
@@ -185,6 +181,7 @@ export function createVoice({ host, api, actions, getDate, getToday }) {
   async function deliver() {
     if (!pending || busy) return;
     busy = true;
+    renderBar();
     showWorking(pending.text ? "Logging…" : "Transcribing…");
     try {
       const result = await api.assistant({
@@ -202,6 +199,7 @@ export function createVoice({ host, api, actions, getDate, getToday }) {
       fail(err);
     } finally {
       busy = false;
+      renderBar();
     }
   }
 
@@ -217,26 +215,64 @@ export function createVoice({ host, api, actions, getDate, getToday }) {
 
   function show(...children) {
     clearTimeout(dismissTimer);
+    recordingPanel = false;
     panel.hidden = false;
     replace(panel, ...children);
   }
 
   function hide() {
     clearTimeout(dismissTimer);
+    recordingPanel = false;
     panel.hidden = true;
     replace(panel);
   }
 
+  // The recording panels. Built once per stage and then only the timer text
+  // changes, so a tap on Cancel is never lost to a redraw.
+  let timeText = null;
+  let hintText = null;
+
+  function showStage(row, ...buttons) {
+    show(row, h("div", { class: "voice-actions" }, ...buttons));
+    recordingPanel = true;
+  }
+
+  const cancelButton = (label) =>
+    h("button", { class: "btn", type: "button", onclick: () => rec.cancel() }, label);
+
+  function showStarting() {
+    showStage(h("p", { class: "meta" }, "Starting the mic…"), cancelButton("× Cancel"));
+  }
+
   function showRecording() {
-    show(
+    timeText = document.createTextNode("");
+    hintText = document.createTextNode("");
+    showStage(
       h("div", { class: "rec" },
         h("span", { class: "rec-ring", "aria-hidden": "true" }),
-        h("span", { class: "rec-time", role: "timer" },
-          `0:${String(seconds).padStart(2, "0")}`),
-        h("span", { class: "rec-hint" }, seconds >= MAX_SECONDS - 10
-          ? `Stops at ${MAX_SECONDS}s` : "Tap the mic again to send")),
-      h("div", { class: "voice-actions" },
-        h("button", { class: "btn", type: "button", onclick: () => cancel() }, "× Cancel")));
+        h("span", { class: "rec-time", role: "timer" }, timeText),
+        h("span", { class: "rec-hint" }, hintText)),
+      cancelButton("× Cancel"));
+    showTime(rec.seconds());
+  }
+
+  function showTime(seconds) {
+    if (!timeText) return;
+    timeText.data = clock(seconds);
+    hintText.data = seconds >= MAX_SECONDS - 10
+      ? `Sends itself at ${clock(MAX_SECONDS)}`
+      : "↑ sends · ■ stops";
+  }
+
+  function showStopped() {
+    timeText = null;
+    hintText = null;
+    showStage(
+      h("div", { class: "rec" },
+        h("span", { class: "rec-time" }, clock(rec.seconds())),
+        h("span", { class: "rec-hint" }, "Recorded. ↑ sends it.")),
+      h("button", { class: "btn", type: "button", onclick: () => rec.start() }, "Record again"),
+      cancelButton("× Discard"));
   }
 
   // The same endpoint, without the microphone: useful in a quiet gym, and the
@@ -275,7 +311,7 @@ export function createVoice({ host, api, actions, getDate, getToday }) {
       result.question ? h("p", { class: "question" }, result.question) : null,
       h("div", { class: "voice-actions" },
         result.question
-          ? h("button", { class: "btn primary", type: "button", onclick: () => start() }, "Answer")
+          ? h("button", { class: "btn primary", type: "button", onclick: () => rec.start() }, "Answer")
           : null,
         result.question
           ? h("button", { class: "btn", type: "button", onclick: () => showTyping() }, "Type")
@@ -315,7 +351,6 @@ export function createVoice({ host, api, actions, getDate, getToday }) {
   }
 
   function fail(err) {
-    teardown();
     const retryable = Boolean(pending);
     show(
       h("p", { class: "notice bad", role: "alert" }, messageFor(err)),
@@ -332,7 +367,9 @@ export function createVoice({ host, api, actions, getDate, getToday }) {
     busy: () => busy,
     // Signed out, or AI turned off: the button and anything open go away.
     destroy() {
-      cancel();
+      rec.cancel();
+      quiet();
+      document.removeEventListener("visibilitychange", onVisibility);
       replace(host);
     },
   };

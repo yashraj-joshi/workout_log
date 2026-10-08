@@ -1,11 +1,12 @@
 // What voice.js decides without a microphone: which container to record in,
-// and what to say when a turn fails. The recording itself needs a browser, so
-// it is checked by hand against the checklist in docs/08.
+// how the timer reads, and what to say when a turn fails. The recorder's own
+// states are in recorder.test.js; how it feels on a phone is checked by hand
+// against the checklist in docs/08.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { messageFor, pickMimeType } from "../js/voice.js";
+import { clock, messageFor, pickMimeType } from "../js/voice.js";
 
 test("Safari gets mp4, Chrome gets webm, and an unknown browser still records", () => {
   const supports = (...types) => ({ isTypeSupported: (type) => types.includes(type) });
@@ -25,6 +26,17 @@ test("a blocked microphone says how to unblock it", () => {
 
 test("a browser that cannot record points at Type instead", () => {
   assert.match(messageFor({ unsupported: true }), /Type instead/);
+});
+
+test("an empty recording says so", () => {
+  assert.equal(messageFor({ empty: true }), "Nothing was recorded. Try again.");
+});
+
+test("the timer reads in minutes and seconds, up to the one-minute limit", () => {
+  assert.equal(clock(0), "0:00");
+  assert.equal(clock(9), "0:09");
+  assert.equal(clock(59), "0:59");
+  assert.equal(clock(60), "1:00", "not 0:60");
 });
 
 test("each failure the server can return has its own wording", () => {
