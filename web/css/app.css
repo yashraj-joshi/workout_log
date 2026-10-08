@@ -870,6 +870,37 @@ dialog.sheet::backdrop { background: rgb(0 0 0 / 0.5); }
   padding: var(--block) max(var(--gutter), env(safe-area-inset-left));
 }
 
+/* The name field's suggestions: under the field, over the form below it. */
+.combo { position: relative; }
+
+.suggest {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 5;
+  margin: 0;
+  padding: 4px 0;
+  list-style: none;
+  /* About five and a half rows, so a cut-off row says there is more. */
+  max-height: calc(5.5 * var(--tap) + 8px);
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.12);
+}
+
+.suggest li {
+  display: flex;
+  align-items: center;
+  min-height: var(--tap);
+  padding: 0 12px;
+  font-size: 16px;
+  cursor: pointer;
+}
+.suggest li:hover, .suggest li[aria-selected="true"] { background: var(--accent-soft); }
+
 .same-as:empty { display: none; }
 
 /* One set per row: the number, its fields, a note, and × to drop it. */

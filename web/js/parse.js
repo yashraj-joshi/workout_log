@@ -191,3 +191,25 @@ export function nameSuggestions(days, commonNames) {
   const rest = commonNames.filter((name) => !seen.has(normalizeWords(name).join(" ")));
   return [...mine, ...rest];
 }
+
+// The names to offer under the name field as I type, best first. Starting with
+// what I typed beats containing it, which beats matching once the spaces and
+// hyphens are gone ("pushup" finds Push-up). Within each tier the order of
+// `names` is kept, so my own recent names stay above the common ones.
+export function matchNames(query, names, limit = 8) {
+  const typed = normalizeWords(query);
+  if (!typed.length) return [];
+  const key = typed.join(" ");
+  const squashed = typed.join("");
+  const tiers = [[], [], []];
+  for (const name of names) {
+    const words = normalizeWords(name);
+    if (words.join(" ").startsWith(key)) tiers[0].push(name);
+    else if (typed.every((part) => words.some((word) => word.startsWith(part)))) tiers[1].push(name);
+    else if (words.join("").includes(squashed)) tiers[2].push(name);
+  }
+  const found = tiers.flat().slice(0, limit);
+  // Nothing to suggest when the only match is what is already in the field.
+  if (found.length === 1 && normalizeWords(found[0]).join(" ") === key) return [];
+  return found;
+}

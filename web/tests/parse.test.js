@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 
 import { setCatalog, commonNames } from "../js/catalog.js";
 import {
-  buildExercise, buildSets, cleanName, nameSuggestions,
+  buildExercise, buildSets, cleanName, matchNames, nameSuggestions,
   parseMuscles, parseNumber, parseReps, rowsFromSets, typeForName, typeOfSets,
 } from "../js/parse.js";
 
@@ -171,4 +171,37 @@ test("name suggestions put my own names first, most recent first", () => {
   // I have already used are not repeated below.
   assert.equal(names.filter((n) => n.toLowerCase() === "seated row").length, 1);
   assert.ok(names.includes("Goblet squat"));
+});
+
+test("name matches wait for something to be typed", () => {
+  assert.deepEqual(matchNames("", commonNames()), []);
+  assert.deepEqual(matchNames("  - ", commonNames()), []);
+});
+
+test("a name that starts with what I typed comes before one that only contains it", () => {
+  const names = ["Bicep curl", "Curl bar row", "Leg curl"];
+  assert.deepEqual(matchNames("curl", names), ["Curl bar row", "Bicep curl", "Leg curl"]);
+  // Every word I type has to start a word in the name, in any order.
+  assert.deepEqual(matchNames("inc bench", commonNames()), ["Incline bench press"]);
+  assert.deepEqual(matchNames("db row", commonNames()), []);
+});
+
+test("my own names stay above the common ones in the same tier", () => {
+  const names = ["Seated row", "Lat pulldown", "Seated leg curl", "Seated calf raise"];
+  assert.deepEqual(matchNames("seated", names), ["Seated row", "Seated leg curl", "Seated calf raise"]);
+});
+
+test("spaces and hyphens do not stop a match", () => {
+  assert.ok(matchNames("pushup", commonNames()).includes("Push-up"));
+  assert.ok(matchNames("pull-up", commonNames()).includes("Pull-up"));
+});
+
+test("name matches stop at the limit", () => {
+  assert.equal(matchNames("c", commonNames()).length, 8);
+  assert.equal(matchNames("c", commonNames(), 3).length, 3);
+});
+
+test("no list when the only match is already typed in full", () => {
+  assert.deepEqual(matchNames("leg extension", ["Leg extension", "Leg press"]), []);
+  assert.deepEqual(matchNames("leg", ["Leg extension"]), ["Leg extension"]);
 });

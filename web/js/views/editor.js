@@ -7,7 +7,7 @@
 import { h, replace, toast } from "../dom.js";
 import * as L from "../logic.js";
 import { commonNames, groups } from "../catalog.js";
-import { buildExercise, nameSuggestions, rowsFromSets, typeForName, typeOfSets } from "../parse.js";
+import { buildExercise, matchNames, nameSuggestions, rowsFromSets, typeForName, typeOfSets } from "../parse.js";
 
 const TYPE_LABELS = { weights: "Weights", time: "Time", hold: "Hold" };
 
@@ -49,14 +49,73 @@ export function openEditor({ host, days, today, date, existing, api, actions }) 
 
   // ------------------------------------------------------------------ parts
 
-  const nameList = h("datalist", { id: "name-options" },
-    nameSuggestions(days, commonNames()).slice(0, 60).map((name) => h("option", { value: name })));
+  // Every name worth offering, mine first. Filtered as I type and never shown
+  // on focus: a list that opens with the dialog covers the form. Any other
+  // name is fine too; the field is free text and the list only helps.
+  const allNames = nameSuggestions(days, commonNames());
+  let matches = [];
+  let active = -1;
+
+  const suggest = h("ul", { id: "ex-name-list", class: "suggest", role: "listbox", "aria-label": "Suggestions", hidden: true });
 
   const nameInput = h("input", {
-    id: "ex-name", class: "box", type: "text", list: "name-options", value: state.name,
+    id: "ex-name", class: "box", type: "text", value: state.name,
+    role: "combobox", "aria-autocomplete": "list", "aria-controls": "ex-name-list", "aria-expanded": "false",
     autocomplete: "off", autocapitalize: "words", enterkeyhint: "next", maxlength: 80,
   });
+
+  function renderSuggestions() {
+    suggest.hidden = !matches.length;
+    nameInput.setAttribute("aria-expanded", String(matches.length > 0));
+    if (active >= 0) nameInput.setAttribute("aria-activedescendant", `ex-name-opt-${active}`);
+    else nameInput.removeAttribute("aria-activedescendant");
+    replace(suggest, matches.map((name, i) => h("li", {
+      id: `ex-name-opt-${i}`, role: "option", "aria-selected": String(i === active),
+      // Keeps focus (and the phone keyboard) in the field, so blur doesn't
+      // close the list before the click lands.
+      onmousedown: (e) => e.preventDefault(),
+      onclick: () => pick(name),
+    }, name)));
+    if (active >= 0) suggest.children[active].scrollIntoView({ block: "nearest" });
+  }
+
+  function showSuggestions(list) {
+    matches = list;
+    active = -1;
+    renderSuggestions();
+  }
+
+  function pick(name) {
+    nameInput.value = name;
+    onNameChange();
+    showSuggestions([]);
+  }
+
   nameInput.addEventListener("input", () => {
+    onNameChange();
+    showSuggestions(matchNames(nameInput.value, allNames));
+  });
+  nameInput.addEventListener("blur", () => showSuggestions([]));
+  nameInput.addEventListener("keydown", (e) => {
+    if (!matches.length) return;
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      // -1 is "nothing highlighted", so the arrows can step back to the text.
+      const span = matches.length + 1;
+      active = ((active + 1 + (e.key === "ArrowDown" ? 1 : -1) + span) % span) - 1;
+      renderSuggestions();
+    } else if (e.key === "Enter" && active >= 0) {
+      // Picks the name rather than saving the form.
+      e.preventDefault();
+      pick(matches[active]);
+    } else if (e.key === "Escape") {
+      // Closes the list, not the dialog.
+      e.preventDefault();
+      showSuggestions([]);
+    }
+  });
+
+  function onNameChange() {
     state.name = nameInput.value;
     const found = L.lookup(state.name);
     if (found && !touched.group) {
@@ -76,7 +135,7 @@ export function openEditor({ host, days, today, date, existing, api, actions }) 
       }
     }
     renderSameAs();
-  });
+  }
 
   const dateInput = h("input", { id: "ex-date", class: "box", type: "date", value: state.date, required: true });
   dateInput.addEventListener("change", () => {
@@ -269,8 +328,8 @@ export function openEditor({ host, days, today, date, existing, api, actions }) 
         h("button", { class: "btn", type: "button", onclick: () => close() }, "Close")),
       h("div", { class: "sheet-body" },
         problem,
-        field("ex-name", "Exercise name", nameInput),
-        nameList,
+        field("ex-name", "Exercise name", h("div", { class: "combo" }, nameInput, suggest),
+          "Pick a suggestion or type your own."),
         sameAs,
         field("ex-date", "Date", dateInput),
         field("ex-area", "Area", groupSelect),

@@ -36,7 +36,10 @@ def test_lookup_rules_are_well_formed():
     seen: set[str] = set()
     for rule in data["lookup"]:
         assert rule["group"] in groups, rule
-        assert 1 <= len(rule["muscles"]) <= 4, rule
+        # Only a Mobility rule may name no muscles: "Yoga" or "Foam rolling"
+        # works no one muscle, and stores exactly as an unknown name would.
+        least = 0 if rule["group"] == "Mobility" else 1
+        assert least <= len(rule["muscles"]) <= 4, rule
         for muscle in rule["muscles"]:
             assert muscle in muscles, rule
         for word in rule["words"]:
@@ -50,6 +53,16 @@ def test_every_common_name_resolves():
     from workoutlog import logic
     for name in catalog.common_names():
         assert logic.lookup(name) is not None, name
+
+
+def test_common_names_are_not_repeated():
+    """Two spellings of one name would show up twice in the suggestions."""
+    from workoutlog import logic
+    seen: set[str] = set()
+    for name in catalog.common_names():
+        key = " ".join(logic.normalize_words(name))
+        assert key not in seen, f"{name!r} is listed twice"
+        seen.add(key)
 
 
 def test_main_areas_use_real_muscles():
