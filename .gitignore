@@ -12,9 +12,6 @@ backend/samconfig.toml
 # Generated from stack outputs; contains no secrets but is per-deployment
 web/config.js
 
-# Personal build brief; kept local
-prompt.md
-
 # Node / editor / OS
 node_modules/
 .DS_Store

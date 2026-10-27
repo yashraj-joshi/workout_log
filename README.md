@@ -64,6 +64,7 @@ imports the OpenAI SDK.
 ## Repo map
 
 ```
+prompt.md                   the build brief: what to build and why, kept current
 shared/
   exercise_catalog.json     muscle vocabulary, name lookup, common names
   fixtures/                 golden cases, run by BOTH pytest and node --test
